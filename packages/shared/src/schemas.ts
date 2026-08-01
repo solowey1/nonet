@@ -11,6 +11,14 @@ import { z } from "zod";
 const slotSchema = z.union([z.literal(0), z.literal(1), z.literal(2)]);
 const rocketOrientationSchema = z.union([z.literal("row"), z.literal("col")]);
 
+export const powerupKindSchema = z.union([
+  z.literal("pencil"),
+  z.literal("eraser"),
+  z.literal("rocket"),
+  z.literal("bomb"),
+  z.literal("fill"),
+]);
+
 const placeActionSchema = z.object({
   t: z.number().int().nonnegative(),
   type: z.literal("place"),
@@ -19,12 +27,16 @@ const placeActionSchema = z.object({
   c: z.number().int(),
 });
 
+// consumeToken (§9): the id of the inventory_ledger row `/api/inventory/consume`
+// wrote when this power-up was activated — required so a tampered log can't
+// claim a power-up use that was never actually charged against inventory.
 const pencilActionSchema = z.object({
   t: z.number().int().nonnegative(),
   type: z.literal("powerup"),
   kind: z.literal("pencil"),
   r: z.number().int(),
   c: z.number().int(),
+  consumeToken: z.string(),
 });
 
 const eraserActionSchema = z.object({
@@ -33,6 +45,7 @@ const eraserActionSchema = z.object({
   kind: z.literal("eraser"),
   r: z.number().int(),
   c: z.number().int(),
+  consumeToken: z.string(),
 });
 
 const rocketActionSchema = z.object({
@@ -41,6 +54,7 @@ const rocketActionSchema = z.object({
   kind: z.literal("rocket"),
   orientation: rocketOrientationSchema,
   index: z.number().int().min(0).max(8),
+  consumeToken: z.string(),
 });
 
 const bombActionSchema = z.object({
@@ -49,6 +63,7 @@ const bombActionSchema = z.object({
   kind: z.literal("bomb"),
   r: z.number().int(),
   c: z.number().int(),
+  consumeToken: z.string(),
 });
 
 const fillActionSchema = z.object({
@@ -57,6 +72,7 @@ const fillActionSchema = z.object({
   kind: z.literal("fill"),
   r: z.number().int(),
   c: z.number().int(),
+  consumeToken: z.string(),
 });
 
 export const actionSchema = z.union([
@@ -89,6 +105,9 @@ export const activeRunSchema = z.object({
   runId: z.string().uuid(),
   seedHex: z.string(),
   actions: actionLogSchema,
+  // A fresh run token scoped to this run, so a resumed client can keep
+  // calling checkpoint/finish/inventory-consume without a separate exchange.
+  runToken: z.string(),
 });
 
 export const sessionResponseSchema = z.object({
@@ -129,6 +148,25 @@ export const runFinishResponseSchema = z.object({
   verified: z.boolean(),
   drops: z.array(z.string()),
   rank: z.number().int().positive().nullable(),
+});
+
+// --- POST /api/session/dev (non-production only — see DECISIONS.md) ---
+
+export const devSessionRequestSchema = z.object({
+  userId: z.number().int().positive(),
+  username: z.string().optional(),
+});
+
+// --- POST /api/inventory/consume ---
+
+export const inventoryConsumeRequestSchema = z.object({
+  runId: z.string().uuid(),
+  item: powerupKindSchema,
+});
+
+export const inventoryConsumeResponseSchema = z.object({
+  consumeToken: z.string(),
+  remaining: z.number().int().nonnegative(),
 });
 
 // --- GET /api/leaderboard ---
@@ -172,9 +210,14 @@ export const profileResponseSchema = z.object({
   streak: z.number().int().nonnegative(),
 });
 
+export type PowerupKind = z.infer<typeof powerupKindSchema>;
 export type Action = z.infer<typeof actionSchema>;
+export type InventoryConsumeRequest = z.infer<typeof inventoryConsumeRequestSchema>;
+export type InventoryConsumeResponse = z.infer<typeof inventoryConsumeResponseSchema>;
 export type SessionRequest = z.infer<typeof sessionRequestSchema>;
+export type DevSessionRequest = z.infer<typeof devSessionRequestSchema>;
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
+export type ActiveRun = z.infer<typeof activeRunSchema>;
 export type User = z.infer<typeof userSchema>;
 export type RunStartResponse = z.infer<typeof runStartResponseSchema>;
 export type RunCheckpointRequest = z.infer<typeof runCheckpointRequestSchema>;

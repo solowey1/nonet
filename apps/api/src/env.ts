@@ -16,6 +16,12 @@ const envSchema = z.object({
   // §12: reject initData older than this when minting a session.
   INIT_DATA_MAX_AGE_SECONDS: z.coerce.number().int().positive().default(15 * 60),
   CORS_ORIGIN: z.string().optional(),
+  // Enables POST /api/session/dev, which mints a session for an arbitrary
+  // user id WITHOUT validating initData — for local web dev only, where
+  // there's no real Telegram WebView to supply it. Requires an explicit
+  // opt-in (not just NODE_ENV) so it can never be live by accident; see
+  // DECISIONS.md.
+  ALLOW_DEV_SESSION: z.coerce.boolean().default(false),
 });
 
 export type Env = z.infer<typeof envSchema>;

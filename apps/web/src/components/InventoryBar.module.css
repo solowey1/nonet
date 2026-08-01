@@ -1,0 +1,39 @@
+.bar {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 8px;
+}
+
+.slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: var(--nonet-radius);
+  border: 2px solid transparent;
+  background: var(--nonet-cell-empty);
+  font-size: 1.3rem;
+  cursor: pointer;
+}
+
+.slot[data-armed="true"] {
+  border-color: var(--nonet-accent);
+  background: color-mix(in srgb, var(--nonet-accent) 22%, var(--nonet-cell-empty));
+}
+
+.slot[data-empty="true"] {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.count {
+  position: absolute;
+  bottom: 1px;
+  right: 3px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--nonet-text-dim);
+}

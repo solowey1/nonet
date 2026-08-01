@@ -29,7 +29,9 @@ describe("POST /api/session", () => {
     expect(body.user.id).toBe("12345");
     expect(body.user.username).toBe("alice");
     expect(typeof body.token).toBe("string");
-    expect(body.inventory).toEqual({});
+    // New users get a starter kit (see services/inventory.ts's welcome gift) —
+    // full coverage of its contents lives in inventory.test.ts.
+    expect(body.inventory.pencil).toBeGreaterThan(0);
     expect(body.activeRun).toBeNull();
   });
 
@@ -59,6 +61,11 @@ describe("POST /api/session", () => {
   it("rejects a malformed request body", async () => {
     const res = await app.inject({ method: "POST", url: "/api/session", payload: {} });
     expect(res.statusCode).toBe(400);
+  });
+
+  it("does not register /api/session/dev unless ALLOW_DEV_SESSION is set", async () => {
+    const res = await app.inject({ method: "POST", url: "/api/session/dev", payload: { userId: 1 } });
+    expect(res.statusCode).toBe(404);
   });
 
   it("upserts the same user across repeated sessions instead of duplicating", async () => {

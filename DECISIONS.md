@@ -133,11 +133,13 @@ re-blessed.
 
 ## Not yet built (per §19's build order)
 
-Steps 1-3 are done (engine, playable slice, backend+auth+leaderboards). Step
-4 (power-ups UI + inventory consume flow) and step 5 (economy/Stars/shop) are
-next — `inventory_ledger`/`inventory_balance`/`purchases` exist in the schema
-but nothing writes to them yet, and there's no shop/invoice route or
-Stars payment handling in the bot.
+Steps 1-4 are done (engine, playable slice, backend+auth+leaderboards,
+power-ups + consume-at-use inventory). Step 5 (economy/Stars/shop) is next —
+`purchases` exists in the schema but nothing writes to it, there's no
+shop/invoice route, and the bot doesn't handle Stars payments yet. Milestone
+drops and the daily gift (§8) also belong to step 5 — right now the *only*
+source of inventory is the one-time welcome gift from Phase 3, which was
+always meant as a stand-in (see its own entry below).
 
 ---
 
@@ -323,3 +325,145 @@ returned to hand), and the game-over overlay + restart flow (forced via the
 debug hook above, since natural game-over is seed-dependent). Production
 build: 67 KB JS / 2 KB CSS gzipped — both comfortably under the §16 budgets
 (120 KB / 12 KB).
+
+---
+
+# Phase 4: power-ups (targeting UI + consume-at-use inventory)
+
+§19 step 4 bundles three things together: the engine's power-ups (done in
+Phase 1), their targeting UI, and "the consume-at-use inventory flow." That
+last part can't be faked — it only means something against a real backend —
+so this phase is also where `apps/web` stopped being local-only and started
+actually talking to `apps/api` (session, run start/checkpoint/finish,
+inventory/consume). That integration reused Phase 3's endpoints as-is; the
+only backend additions were the consume endpoint itself, the welcome gift,
+and consumeToken verification at finish.
+
+## `consumeToken` is the `inventory_ledger` row id, not a signed token
+
+§9 asks for a `consumeToken` from `/api/inventory/consume` that "must appear
+in the corresponding action in the log." Rather than mint a JWT or random
+opaque string (which would need its own one-time-use tracking table),
+the token *is* the ledger row's own `bigserial` id, returned as a string.
+It's unforgeable — an attacker can't produce a valid id without this
+endpoint having actually decremented their balance — and naturally
+one-time-use: `run/finish`'s `validateConsumeTokens` (services/inventory.ts)
+just checks that no id is claimed by more than one action in the log, and
+that each claimed id's `(user_id, run_id, reason='use', item)` matches what
+the action says it is. No extra table, no extra crypto, and the check is a
+single indexed `WHERE id = ANY(...)` query.
+
+## `consumeToken` lives on the wire action, not the engine's `Action` type
+
+`@nonet/engine`'s `Action` union (used by `reduce`/`replay`) has no
+`consumeToken` field — the engine doesn't know inventory exists, by design.
+`@nonet/shared`'s `actionSchema` adds `consumeToken` to each power-up
+variant; the API passes the *shared* action straight into `reduce`/`replay`
+anyway, since TypeScript structural typing allows a value with extra fields
+to satisfy a narrower parameter type. `validateConsumeTokens` is the one
+place that actually reads the extra field. This means an engine change to
+`Action` and a shared-schema change to `actionSchema` are two edits, not
+one — accepted for the same reason `packages/shared`'s hand-mirrored schema
+is (see Phase 3): the engine has to stay zod-free.
+
+## Welcome gift is the only source of inventory right now
+
+There's no economy yet (§19 step 5), so without something granting items
+there'd be nothing to consume and no way to exercise this phase's actual
+subject. Every brand-new user gets a fixed starter kit (3 pencil, 3 eraser,
+2 rocket, 1 bomb, 1 fill — `services/inventory.ts`'s `WELCOME_GIFT`) recorded
+as a normal `reason: 'gift'` ledger entry, granted exactly once (detected via
+`INSERT ... ON CONFLICT DO NOTHING RETURNING id` on the user row, not a
+separate — racy — existence check). These numbers are arbitrary and
+explicitly not a drop-rate decision (§8's real earning loop is milestone
+drops + a daily gift, both step 5) — just enough to click every button once
+during review.
+
+## Dev-only session bypass: `POST /api/session/dev`
+
+There's no real Telegram WebView in a browser tab, so `apps/web` has no way
+to obtain genuine `initData` outside Telegram itself. Gated behind
+`ALLOW_DEV_SESSION` (an explicit opt-in env var, deliberately *not* just
+`NODE_ENV !== 'production'`, so it can't be live by an unset-env-var
+accident), `/api/session/dev` mints a session for an arbitrary user id with
+no initData check at all. The route isn't even registered unless the flag is
+set — confirmed by a test asserting it 404s by default — rather than
+existing-but-rejecting, so there's no code path in a production process that
+even parses the bypass request shape. The client's fallback
+(`getOrCreateDevUserId` in `apps/web`) picks a random id once and persists it
+in `localStorage`, so a dev session's inventory/progress survives reloads
+instead of minting a fresh user every refresh.
+
+## Board-targeting power-ups share one press-drag-release interaction
+
+Pencil, eraser, bomb, and fill all follow the same gesture (`usePowerupTargeting`):
+arm from the inventory bar, press on the board, see a live preview, release
+to commit. Only the *preview shape* differs per kind
+(`utils/powerupPreview.ts`: one cell / a 2x2 window / a cross / the actual
+flood-filled region), which is what §7's table describes for each of them
+anyway — modeling it as one hook with a per-kind pure preview function beats
+four near-identical hooks. Rocket is the one genuine exception: §7 specifies
+36 fixed gutter slots around the board, not a targeted drag, so it's a
+separate component (`RocketGutters`) with a plain tap-to-fire per slot.
+
+## Fill's region-too-large refusal is computed twice, deliberately
+
+The client pre-checks the region size locally (`floodFillEmptyRegion`) before
+ever calling `/api/inventory/consume` — a refusal must cost nothing (§7:
+"without consuming the item"), and the cheapest way to guarantee that is to
+never make the network call in the first place when the local engine
+already knows the answer. The *live preview* (during the press-drag, before
+release) also runs this same check continuously so the refusal message
+("Region too large (N cells) — pick a smaller pocket") is visible while
+aiming, not just after a failed commit. Both call the same pure function
+(`computeTargetPreview`); there's no separate "authoritative" version to
+drift from the preview.
+
+One UI bug this surfaced and fixed during manual testing: the refusal
+message was clearing itself the instant the pointer lifted (`targeting`
+resets to `null` on release), before it was readable. It now persists for a
+fixed ~2.2s after release when the last live preview was a too-large fill,
+via a ref tracking the last non-null targeting state — see `App.tsx`'s
+`lastTargetingRef`.
+
+## Fill's clear animation needs its own mask computation
+
+Rocket/bomb/pencil/eraser all *remove* cells, so `game.board & ~next.board`
+(bits that were set before and are clear after) is exactly the set of cells
+to animate away. Fill is the odd one out — it can fill cells in that were
+never set in `game.board` and get them cleared in the same action, which
+that simple diff can't see (both before and after, they read as 0). The
+store's `computeFillClearedMask` instead replays fill's own two engine steps
+(`applyFill` then `resolveClears`) to get the real cleared mask, mirroring
+exactly what `reduce.ts`'s `powerup`/`fill` case does internally.
+
+## Non-fill power-up failures don't distinguish *why* to the UI
+
+`applyPowerupAction` (used by pencil/eraser/bomb/rocket) returns a plain
+`boolean` — it doesn't surface "insufficient inventory" vs. "network error"
+the way fill's `applyFillPowerup` does. In practice the inventory-bar button
+is already disabled at qty 0, so a server-side insufficient-inventory
+response here is only reachable via a genuine race (e.g. two tabs), not a
+normal click — not worth a richer error-reason plumbing for step 4's scope.
+Fill gets the richer `ConsumeFailureReason` return specifically because its
+*expected*, non-racy refusal (region too large) needed a real message.
+
+## Verified end-to-end against a live API + Postgres, including a fill success
+
+Ran the real dev server stack (`ALLOW_DEV_SESSION=true` api + Vite web) behind
+headless Chromium and drove every power-up through the actual UI: pencil
+(tap a filled cell), eraser (2x2 drag), bomb (cross preview), rocket (all 36
+gutter slots render; firing one clears correctly), and fill's refusal path
+(region too large, not consumed, message persists). A genuine fill
+*success* needed a bounded empty pocket that random piece placement didn't
+reliably produce in a short session, so that one path was exercised by
+forcing a board state through the dev-only `window.__nonetStore` hook (see
+Phase 2) rather than fighting the dealer's RNG — the resulting massive
+clear + perfect-clear bonus fired exactly as the already-existing engine
+unit tests predict. That run was intentionally never submitted to
+`run/finish` (the forced board never went through a logged action, so its
+replay would correctly fail verification — which is the right outcome, not
+a bug). Also reconfirmed collision rejection and score accounting still
+work after the store rewrite. 134 tests pass across the workspace
+(109 engine + 25 api); production build stays at 85 KB JS / 2.4 KB CSS
+gzipped, still under the §16 budgets.

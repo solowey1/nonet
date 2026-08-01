@@ -11,6 +11,7 @@ import type { FastifyInstance } from "fastify";
 import { db } from "../db/client.js";
 import { runs, users } from "../db/schema.js";
 import { env } from "../env.js";
+import { validateConsumeTokens } from "../services/inventory.js";
 import { bytesToHex, hexToBytes } from "../utils/hex.js";
 import { randomUuidV7 } from "../utils/uuid.js";
 
@@ -76,7 +77,14 @@ export async function runRoutes(app: FastifyInstance) {
     const result = replay(hexToBytes(run.seed), actions);
     const usedPowerups = actions.some((a) => a.type === "powerup");
 
-    if (result.valid) {
+    // The engine's replay has no concept of inventory, so a log that
+    // fabricates or double-spends power-up actions would otherwise pass
+    // replay verification untouched — this is a separate, equally load-bearing
+    // check (§9).
+    const consumeTokensOk = result.valid ? await validateConsumeTokens(db, userId, run.id, actions) : true;
+    const verified = result.valid && consumeTokensOk;
+
+    if (verified) {
       await db
         .update(runs)
         .set({
@@ -95,12 +103,24 @@ export async function runRoutes(app: FastifyInstance) {
       // §9: never surface a scary error — just store unverified, exclude from
       // leaderboards, award no drops, and nudge the fraud counter.
       app.log.warn(
-        { runId: run.id, userId: userId.toString(), reason: result.reason, error: result.error },
-        "replay verification failed",
+        {
+          runId: run.id,
+          userId: userId.toString(),
+          replayReason: result.valid ? undefined : result.reason,
+          replayError: result.valid ? undefined : result.error,
+          consumeTokensOk,
+        },
+        "run failed verification",
       );
       await db
         .update(runs)
-        .set({ endedAt: new Date(), score: result.scoreSoFar, usedPowerups, verified: false, actions })
+        .set({
+          endedAt: new Date(),
+          score: result.valid ? result.score : result.scoreSoFar,
+          usedPowerups,
+          verified: false,
+          actions,
+        })
         .where(eq(runs.id, run.id));
       await db
         .update(users)
@@ -109,8 +129,8 @@ export async function runRoutes(app: FastifyInstance) {
     }
 
     let rank: number | null = null;
-    if (result.valid) {
-      const finalScore = result.score;
+    if (verified) {
+      const finalScore = result.valid ? result.score : 0;
       const [countRow] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(runs)
@@ -121,7 +141,7 @@ export async function runRoutes(app: FastifyInstance) {
     return reply.send(
       runFinishResponseSchema.parse({
         score: result.valid ? result.score : result.scoreSoFar,
-        verified: result.valid,
+        verified,
         drops: [],
         rank,
       }),

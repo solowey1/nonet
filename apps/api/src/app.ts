@@ -2,6 +2,7 @@ import fastifyRateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import { authPlugin } from "./plugins/auth.js";
 import { env } from "./env.js";
+import { inventoryRoutes } from "./routes/inventory.js";
 import { leaderboardRoutes } from "./routes/leaderboard.js";
 import { profileRoutes } from "./routes/profile.js";
 import { runRoutes } from "./routes/run.js";
@@ -18,6 +19,7 @@ export function buildApp(): FastifyInstance {
 
   app.register(sessionRoutes);
   app.register(runRoutes);
+  app.register(inventoryRoutes);
   app.register(leaderboardRoutes);
   app.register(profileRoutes);
 

@@ -35,6 +35,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+.rank {
+  min-height: 1.1em;
+  font-size: 0.85rem;
+  color: var(--nonet-text-dim);
+}
+
 .stats {
   display: flex;
   gap: 20px;

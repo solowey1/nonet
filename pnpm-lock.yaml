@@ -87,6 +87,9 @@ importers:
       '@nonet/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@nonet/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       react:
         specifier: ^19.0.0
         version: 19.2.8

@@ -18,3 +18,38 @@
 .trayWrap {
   flex-shrink: 0;
 }
+
+.boot {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  color: var(--nonet-text-dim);
+}
+
+.bootError {
+  color: var(--nonet-danger);
+}
+
+.bootRetry {
+  min-height: 44px;
+  padding: 8px 24px;
+  border-radius: var(--nonet-radius);
+  border: none;
+  background: var(--nonet-accent);
+  color: #0b0e13;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hint {
+  min-height: 1.2em;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--nonet-danger);
+  padding: 0 12px;
+}

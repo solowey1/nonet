@@ -1,5 +1,6 @@
-import { forwardRef, useEffect, useState } from "react";
+import { forwardRef, useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { BOARD_SIZE, type Board as BoardBits } from "@nonet/engine";
+import type { TargetingState } from "../hooks/usePowerupTargeting.js";
 import type { ClearEvent } from "../store/gameStore.js";
 import type { GhostPreview } from "../types.js";
 import { maskToCells } from "../utils/bitmask.js";
@@ -9,7 +10,9 @@ interface BoardProps {
   readonly board: BoardBits;
   readonly cellFamilies: Uint8Array;
   readonly ghost: GhostPreview | null;
+  readonly powerupPreview: TargetingState | null;
   readonly clearEvent: ClearEvent | null;
+  readonly onPointerDown?: (event: ReactPointerEvent<HTMLDivElement>) => void;
 }
 
 const CLEAR_STAGGER_MS = 12;
@@ -24,7 +27,7 @@ function isBitSet(mask: BoardBits, index: number): boolean {
 }
 
 export const Board = forwardRef<HTMLDivElement, BoardProps>(function Board(
-  { board, cellFamilies, ghost, clearEvent },
+  { board, cellFamilies, ghost, powerupPreview, clearEvent, onPointerDown },
   ref,
 ) {
   const [clearing, setClearing] = useState<Map<number, ClearingCell> | null>(null);
@@ -46,6 +49,11 @@ export const Board = forwardRef<HTMLDivElement, BoardProps>(function Board(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearEvent?.key]);
 
+  const powerupCellIndices =
+    powerupPreview && powerupPreview.preview.cells.length > 0
+      ? new Set(powerupPreview.preview.cells.map(({ row, col }) => row * BOARD_SIZE + col))
+      : null;
+
   const cells = [];
   for (let index = 0; index < BOARD_SIZE * BOARD_SIZE; index++) {
     const row = Math.floor(index / BOARD_SIZE);
@@ -55,9 +63,11 @@ export const Board = forwardRef<HTMLDivElement, BoardProps>(function Board(
     const family = cellFamilies[index] || 0;
     const inGhost = ghost !== null && isBitSet(ghost.mask, index);
     const wouldClear = ghost !== null && ghost.legal && isBitSet(ghost.highlightMask, index);
+    const inPowerupPreview = powerupCellIndices?.has(index) ?? false;
 
     let ghostState: "legal" | "illegal" | undefined;
     if (inGhost) ghostState = ghost?.legal ? "legal" : "illegal";
+    else if (inPowerupPreview) ghostState = powerupPreview?.preview.valid ? "legal" : "illegal";
 
     cells.push(
       <div
@@ -82,7 +92,7 @@ export const Board = forwardRef<HTMLDivElement, BoardProps>(function Board(
   }
 
   return (
-    <div ref={ref} className={styles.board} role="grid" aria-label="NONET board">
+    <div ref={ref} className={styles.board} role="grid" aria-label="NONET board" onPointerDown={onPointerDown}>
       {cells}
     </div>
   );
