@@ -1,0 +1,31 @@
+.tray {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: clamp(8px, 4vw, 24px);
+  padding: 12px 8px calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
+.slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 6px;
+  border-radius: var(--nonet-radius);
+  touch-action: none;
+  transition: transform 120ms ease-out;
+}
+
+.slot[data-empty="true"] {
+  visibility: hidden;
+}
+
+.slot[data-dragging="true"] {
+  opacity: 0;
+}
+
+.slot:not([data-dragging="true"]):not([data-empty="true"]):active {
+  transform: scale(1.05);
+}

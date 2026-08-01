@@ -1,0 +1,39 @@
+.popup {
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: float-up 700ms ease-out forwards;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+.score {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--nonet-text);
+}
+
+.combo {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--nonet-accent);
+}
+
+@keyframes float-up {
+  0% {
+    transform: translate(-50%, 0) scale(0.6);
+    opacity: 0;
+  }
+  20% {
+    transform: translate(-50%, 0) scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -36px) scale(1);
+    opacity: 0;
+  }
+}

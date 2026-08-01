@@ -1,0 +1,10 @@
+.piece {
+  position: relative;
+}
+
+.cell {
+  position: absolute;
+  border-radius: 3px;
+  background: var(--piece-color, var(--nonet-cell-filled));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
