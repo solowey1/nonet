@@ -133,6 +133,71 @@ re-blessed.
 
 ## Not yet built (per §19's build order)
 
-Only step 1 (the engine, `packages/engine`) is done. `packages/shared`,
-`apps/web`, `apps/api`, `apps/bot`, and `docker/` don't exist yet — they're
-steps 2+ and come after this step is reviewed.
+Steps 1 (engine) and 2 (playable slice, `apps/web`) are done. `packages/shared`,
+`apps/api`, `apps/bot`, and `docker/` don't exist yet — those are steps 3+.
+
+---
+
+# Phase 2: playable slice (`apps/web`)
+
+No backend, no power-ups, no Telegram SDK yet (§19 step 2 scope) — just
+board → drag-and-drop → clear → game over → local score, entirely client-side.
+
+## Drag implementation: pointer events, not native HTML5 DnD
+
+Native drag-and-drop doesn't handle touch well and fights CSS transforms;
+`useDragPlacement` instead does the whole gesture with raw `pointermove`/
+`pointerup`/`pointercancel` listeners attached to `window` for the duration of
+one drag, reading/writing the Zustand store via `getState()`/`setState()`
+inside the drag-session closures rather than through the reactive hook — a
+single continuous gesture should never operate on a snapshot that's gone
+stale mid-drag.
+
+## Placement centers the piece under the pointer, then snaps and clamps
+
+The dragged piece's bounding-box center tracks the pointer continuously; the
+*board* ghost separately rounds that to the nearest cell and clamps into
+`[0, 9-piece.h]`/`[0, 9-piece.w]`. A practical consequence: dragging past the
+board edge doesn't refuse the drop, it clamps to the nearest position that's
+still fully on-board (still subject to the normal collision check). This
+reads as more forgiving/mobile-friendly than a hard refusal at the boundary,
+and doesn't change what's legal — `canPlace` from the engine is still the
+only thing that decides whether a drop actually commits.
+
+## Cosmetic per-cell "piece family" colour is tracked outside the engine
+
+§15 wants each piece's cell-count family colour held constant across a run,
+but the engine's board is an opaque bitmask with no per-cell metadata (by
+design — it's what keeps clear detection a few bitwise ops). `gameStore.ts`
+keeps a parallel `cellFamilies: Uint8Array(81)` purely for rendering, updated
+in lockstep with every placement/clear the store applies. It's derived,
+never authoritative, and if it ever drifts from `game.board` that's a
+rendering bug, not a rules bug — the engine's own tests don't know it exists.
+
+## Animation timing: clear stagger measured in engine coordinates
+
+The clear animation staggers outward from the triggering placement using
+Chebyshev distance (`max(|dr|, |dc|)`) at 12ms/cell (§15), computed from the
+`ClearEvent.originRow/originCol` the store records at placement time — capped
+by board geometry at 8 cells away, so worst case ≈ 96ms of stagger + 260ms of
+per-cell animation, comfortably under the 350ms ceiling.
+
+## Dev-only store escape hatch
+
+`main.tsx` attaches the Zustand store to `window.__nonetStore` behind
+`import.meta.env.DEV`, purely so a state like "game over" can be forced from
+a console/test script without playing an entire run first — real hands are
+randomly dealt, so scripting a genuine loss deterministically isn't
+practical. Dead-code-eliminated from production builds by Vite's static
+`import.meta.env.DEV` replacement; nothing shipped reads it.
+
+## Verified manually (no automated UI tests yet, per §1: "UI tests are optional")
+
+Ran the dev server behind a headless Chromium (Playwright) and exercised:
+piece pickup (scale-up animation), ghost preview (legal=blue tint,
+illegal/colliding=red tint), snapping, drop commit, score update, hand
+refill after all 3 slots empty, collision rejection (score unchanged, piece
+returned to hand), and the game-over overlay + restart flow (forced via the
+debug hook above, since natural game-over is seed-dependent). Production
+build: 67 KB JS / 2 KB CSS gzipped — both comfortably under the §16 budgets
+(120 KB / 12 KB).

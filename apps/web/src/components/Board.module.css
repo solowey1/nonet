@@ -1,0 +1,79 @@
+.board {
+  --cell: min(9.5vw, 9.5vh, 42px);
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(9, var(--cell));
+  grid-template-rows: repeat(9, var(--cell));
+  background: var(--nonet-board);
+  border-radius: var(--nonet-radius);
+  box-shadow: var(--nonet-shadow);
+  padding: 4px;
+  touch-action: none;
+}
+
+.cell {
+  position: relative;
+  width: var(--cell);
+  height: var(--cell);
+  border-radius: 3px;
+}
+
+.cellInner {
+  position: absolute;
+  inset: 1.5px;
+  border-radius: 3px;
+  background: var(--nonet-cell-empty);
+  transition: background-color 80ms ease-out;
+}
+
+.cellInner[data-filled="true"] {
+  background: var(--piece-color, var(--nonet-cell-filled));
+}
+
+.cell[data-border-right="true"] {
+  border-right: 2px solid var(--nonet-block-divider);
+}
+
+.cell[data-border-bottom="true"] {
+  border-bottom: 2px solid var(--nonet-block-divider);
+}
+
+/* Ghost preview: the shape a dragged piece would occupy at its snapped position. */
+.cellInner[data-ghost="legal"] {
+  background: var(--nonet-accent);
+  opacity: 0.55;
+}
+
+.cellInner[data-ghost="illegal"] {
+  background: var(--nonet-danger);
+  opacity: 0.4;
+}
+
+/* Which rows/cols/blocks would clear — a border treatment, not colour-only (§15 a11y floor). */
+.cellInner[data-would-clear="true"] {
+  outline: 2px dashed var(--nonet-accent);
+  outline-offset: -2px;
+}
+
+.cellInner[data-clearing="true"] {
+  animation: clear-cell 260ms ease-in forwards;
+  animation-delay: var(--clear-delay, 0ms);
+  z-index: 2;
+}
+
+@keyframes clear-cell {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+    background: var(--nonet-clear-flash);
+  }
+  25% {
+    transform: scale(1.05);
+    opacity: 1;
+    background: var(--nonet-clear-flash);
+  }
+  100% {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+}

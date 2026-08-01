@@ -1,0 +1,28 @@
+.hud {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 6px;
+}
+
+.score {
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--nonet-text-dim);
+  display: block;
+}
+
+.combo {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--nonet-accent);
+  min-width: 3em;
+  text-align: right;
+}
