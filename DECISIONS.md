@@ -133,8 +133,130 @@ re-blessed.
 
 ## Not yet built (per §19's build order)
 
-Steps 1 (engine) and 2 (playable slice, `apps/web`) are done. `packages/shared`,
-`apps/api`, `apps/bot`, and `docker/` don't exist yet — those are steps 3+.
+Steps 1-3 are done (engine, playable slice, backend+auth+leaderboards). Step
+4 (power-ups UI + inventory consume flow) and step 5 (economy/Stars/shop) are
+next — `inventory_ledger`/`inventory_balance`/`purchases` exist in the schema
+but nothing writes to them yet, and there's no shop/invoice route or
+Stars payment handling in the bot.
+
+---
+
+# Phase 3: backend + auth + Docker (`apps/api`, `apps/bot`, `docker/`)
+
+## `packages/shared`'s action schema is hand-mirrored, not derived, from the engine's
+
+`@nonet/shared`'s `actionSchema` (zod) duplicates `@nonet/engine`'s `Action`
+union by hand rather than generating one from the other. The engine is
+contractually dependency-free — it can't import zod — and shared needs a
+*runtime* validator, not just the compile-time type `@nonet/engine` already
+exports. Cheap to keep in sync (the action shape is small and stable); if it
+drifts, a checkpoint/finish payload gets rejected at the zod layer loudly,
+not silently miscompiled somewhere.
+
+## Postgres `seed` column is `text` (hex), not `bytea`
+
+§11 specifies `seed bytea`. Drizzle's pg-core doesn't have a first-class
+`bytea` column helper (it'd need a `customType()`), and the seed only ever
+needs to be a fixed-length hex string handed to the engine's
+`createRngFromHex`/`replay(seed: Uint8Array, ...)` — storing it as `text`
+(32 hex chars) is functionally identical, simpler to log/debug, and avoids
+hand-rolling a binary column type for no real benefit at this scale.
+
+## initData HMAC direction verified against current Telegram docs, not the brief's shorthand
+
+§12 writes the secret-key formula as `HMAC_SHA256("WebAppData", BOT_TOKEN)`,
+which is ambiguous about which argument is the HMAC *key* vs the *message*.
+Implemented the documented, unchanged algorithm from
+`core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app`:
+key = `"WebAppData"`, message = the bot token; then that digest becomes the
+key for a second HMAC over the sorted `key=value` data-check-string. Got the
+order backwards once while writing the test helper (`test/helpers/telegram.ts`)
+and the round-trip test caught it immediately — which is exactly why that
+helper re-implements the algorithm independently rather than importing
+`validateInitData` and asserting it agrees with itself.
+
+## Run tokens are JWTs carrying `runId`, not a second DB-backed token table
+
+§9/§10 call for a "signed short-lived run token" from `/api/run/start`.
+Implemented as a JWT (`{ sub: userId, runId }`, `RUN_TOKEN_TTL_SECONDS` TTL)
+verified by a second Fastify preHandler (`authenticateRun`) that separately
+checks the body's `runId` matches the token's — no extra table, no extra
+round trip, and it's self-revoking (expires on its own). A real revocation
+list would only matter if we needed to invalidate a run token before its TTL
+elapses, which nothing in Phase 3 requires.
+
+## Leaderboard: best-score-per-user via a raw `DISTINCT ON`-style query
+
+A leaderboard should show each player's best run, not every run — drizzle's
+query builder doesn't have a clean way to express "top row per group," so
+`leaderboard.ts` drops to one raw parameterised SQL query (`row_number() over
+(partition by user_id order by score desc)`) rather than force-fitting the
+builder. `scope=daily/weekly` use `now() - interval` rolling windows, not
+calendar-day/ISO-week boundaries — simpler, and "daily" reads more naturally
+as "in the last 24h" for a casual mobile game anyway. `around` (page around
+the requester's own rank) is accepted by the schema but not implemented — a
+nice-to-have deferred past this phase, noted in the route so it isn't
+silently wrong.
+
+## Rank on `/api/run/finish` is computed against the full Open (all-time) board
+
+The response schema's `rank` field doesn't specify which leaderboard scope it
+ranks against. Implemented as "count of verified runs with a strictly higher
+score, all-time, any power-up usage, +1" — the simplest well-defined answer.
+`null` when the run failed verification (excluded from every board, so no
+rank is meaningful).
+
+## `apps/bot` is a thin webhook skeleton, not the full economy bot
+
+Phase 3's brief scope is auth + run lifecycle + leaderboards — Stars
+invoices, `pre_checkout_query`/`successful_payment` handling, and the shop
+are step 5. `apps/bot` currently only answers `/start` with a "Play NONET"
+button (forwarding `start_param` as `startapp` for deep links) and verifies
+`X-Telegram-Bot-Api-Secret-Token` on the webhook route via grammY's own
+`secretToken` option — enough to make `docker-compose.yml`'s four-service
+shape real today rather than a placeholder.
+
+## api/bot Docker images: esbuild-bundled, not `tsc`-compiled
+
+`@nonet/engine` and `@nonet/shared` intentionally point their `main`/`types`
+at TypeScript source, not a build artifact — great for dev (tsx/vite/vitest
+all transpile on the fly, so an engine edit is instantly visible everywhere
+that imports it) but fatal for a production image, where a plain `node
+dist/index.js` cannot execute a `.ts` file just because some package's
+`main` field points at one. Rather than restructure those packages' exports
+to always point at a compiled `dist/` (which would cost the instant-reload
+dev experience), `apps/api`/`apps/bot` each gained a `build.mjs` that bundles
+their entry point(s) with esbuild: real npm dependencies (fastify,
+drizzle-orm, postgres, grammy, ...) stay external and get installed normally
+in the runtime image, while the workspace packages' source is traced and
+inlined directly into the bundle, so the shipped `dist/index.js` has zero
+runtime dependency on `@nonet/engine`/`@nonet/shared` existing as packages at
+all. Verified end-to-end outside Docker (no registry access in this sandbox —
+see below): built both bundles, ran `node dist/db/migrate.js` against a real
+local Postgres, then `node dist/index.js` and `node dist/bot/index.js`, and
+hit their health endpoints successfully.
+
+## Docker images: config-validated, not build-validated, in this sandbox
+
+This sandbox's network policy blocks Docker Hub image pulls outright (a
+`docker pull node:22-slim` 403s at the registry CDN — confirmed, not
+retried, per this environment's own instructions not to route around a
+policy denial). `docker compose config` fully parses and resolves
+`docker-compose.yml` (interpolation, `env_file`, healthchecks, the `Nonet`
+container name), and every application-level artifact the images would run
+was independently verified outside a container (see above and Phase 2's
+notes) — but nobody has actually built `docker/*.Dockerfile` end-to-end or
+started the four-container stack. Worth a real `docker compose up --build`
+on a machine with normal registry access before trusting this in production.
+
+## Game container is named `Nonet`
+
+Per explicit request: `docker-compose.yml`'s `web` service (nginx serving the
+built SPA — "the game" from a player's perspective) is set to
+`container_name: Nonet`, matching the repository's name. The other three
+services use lowercase, hyphenated names (`nonet-api`, `nonet-bot`,
+`nonet-postgres`) for consistency with typical Docker naming conventions,
+since only the game container's name was specified.
 
 ---
 

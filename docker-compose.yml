@@ -1,0 +1,70 @@
+name: nonet
+
+services:
+  # The game itself — nginx serving the built SPA, and routing /api/ and
+  # /tg/webhook to the other two services (§18). Named to match the repo.
+  web:
+    container_name: Nonet
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+      bot:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    container_name: nonet-api
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-nonet}:${POSTGRES_PASSWORD:-nonet}@postgres:5432/${POSTGRES_DB:-nonet}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  bot:
+    container_name: nonet-bot
+    build:
+      context: .
+      dockerfile: docker/bot.Dockerfile
+    env_file: .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  postgres:
+    container_name: nonet-postgres
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nonet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nonet}
+      POSTGRES_DB: ${POSTGRES_DB:-nonet}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nonet}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres_data:
