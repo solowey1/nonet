@@ -30,18 +30,35 @@ export function requirementForTier(tier: DifficultyTier): number {
 
 /**
  * Adaptive weighting (§4): favour small pieces on a near-empty board, and
- * penalise large ones on a crowded board.
+ * on a crowded one, either protect the player from large pieces (low tiers)
+ * or actively work against them (high tiers). At every tier, `gentle`'s full
+ * protective bias applied uniformly meant a crowded board would almost never
+ * actually deal a piece that doesn't fit — which is why "hard" (whose
+ * *requirement* already drops to just 1-of-3 guaranteed placeable) still
+ * rarely produced a genuinely dangerous hand in practice: the protection was
+ * quietly overriding the requirement's own intent. `gentle` keeps the
+ * original protection. `hard` flips the sign entirely — a crowded board
+ * *boosts* the odds of both the rare 5-cell pieces and the much more common
+ * 4-cell tetrominoes, since the 5-cell ones alone are too rare in the
+ * catalogue to meaningfully shift the drawn distribution on their own.
  */
-export function adaptiveWeight(piece: Piece, fill: number): number {
+export function adaptiveWeight(piece: Piece, fill: number, tier: DifficultyTier = "gentle"): number {
   let w = piece.weight;
   const cells = cellCount(piece);
-  if (fill > 0.6 && cells >= 5) w *= 0.35;
+  if (fill > 0.6) {
+    if (tier === "gentle" && cells >= 5) w *= 0.35;
+    else if (tier === "normal" && cells >= 5) w *= 0.65;
+    else if (tier === "hard") {
+      if (cells >= 5) w *= 1.6;
+      else if (cells >= 4) w *= 1.3;
+    }
+  }
   if (fill < 0.25 && cells <= 2) w *= 0.5;
   return w;
 }
 
-function weightsForFill(fill: number): number[] {
-  return PIECE_CATALOGUE.map((p) => adaptiveWeight(p, fill));
+function weightsForFill(fill: number, tier: DifficultyTier): number[] {
+  return PIECE_CATALOGUE.map((p) => adaptiveWeight(p, fill, tier));
 }
 
 function drawOne(state: RngState, weights: readonly number[], excludeIndex?: number): [Piece, RngState] {
@@ -59,8 +76,8 @@ function drawOne(state: RngState, weights: readonly number[], excludeIndex?: num
  * Draw 3 weighted-random pieces (with replacement), enforcing "never deal
  * three copies of the same large (>=5 cell) piece in one hand" (§4).
  */
-export function drawHand(state: RngState, fill: number): [[Piece, Piece, Piece], RngState] {
-  const weights = weightsForFill(fill);
+export function drawHand(state: RngState, fill: number, tier: DifficultyTier = "gentle"): [[Piece, Piece, Piece], RngState] {
+  const weights = weightsForFill(fill, tier);
   const [p1, s1] = drawOne(state, weights);
   const [p2, s2] = drawOne(s1, weights);
   let p3: Piece;
@@ -144,7 +161,8 @@ export interface DealResult {
  */
 export function dealHand(board: Board, rng: RngState, score: number): DealResult {
   const fill = fillRatio(board);
-  const requirement = requirementForTier(difficultyTier(score));
+  const tier = difficultyTier(score);
+  const requirement = requirementForTier(tier);
 
   let state = rng;
   let best: { hand: [Piece, Piece, Piece]; count: number } | null = null;
@@ -154,7 +172,7 @@ export function dealHand(board: Board, rng: RngState, score: number): DealResult
   const sharedMemo = new Map<string, number>();
 
   for (let attempt = 0; attempt < DEAL_MAX_ATTEMPTS; attempt++) {
-    const [hand, next] = drawHand(state, fill);
+    const [hand, next] = drawHand(state, fill, tier);
     state = next;
     const count = maxPlaceable(board, hand, sharedMemo);
     if (best === null || count > best.count) best = { hand, count };

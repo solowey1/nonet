@@ -1,9 +1,17 @@
-import type { Hand } from "@nonet/engine";
+import { PIECE_CATALOGUE, type Hand } from "@nonet/engine";
 import { PieceView } from "./PieceView.js";
 import { pieceFamily } from "../utils/pieceFamily.js";
 import styles from "./HandTray.module.css";
 
 const TRAY_SCALE = 0.7;
+
+// PieceView sizes its root to the actual piece (w/h in cells), so a slot's
+// rendered height varies with whichever piece is currently dealt into it —
+// left unreserved, the tray's own height (and everything below/above it in
+// the column layout, i.e. the board) shifts every time the hand changes.
+// Reserving the tallest possible piece's height up front keeps the tray a
+// fixed size regardless of hand contents.
+const MAX_PIECE_DIM = Math.max(...PIECE_CATALOGUE.map((p) => Math.max(p.w, p.h)));
 
 interface HandTrayProps {
   readonly hand: Hand;
@@ -14,9 +22,10 @@ interface HandTrayProps {
 
 export function HandTray({ hand, cellSize, draggingSlot, onGrab }: HandTrayProps) {
   const traySlotCell = cellSize * TRAY_SCALE;
+  const trayHeight = Math.max(44, traySlotCell * MAX_PIECE_DIM);
 
   return (
-    <div className={styles.tray}>
+    <div className={styles.tray} style={{ minHeight: trayHeight }}>
       {([0, 1, 2] as const).map((slot) => {
         const piece = hand[slot];
         return (

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EMPTY_BOARD, canPlace, placePiece, popcount } from "../src/board.js";
 import { PIECE_CATALOGUE, type Piece, cellCount, getPiece, isLargePiece } from "../src/pieces.js";
 import { createRngFromSeed, nextInt, type RngState } from "../src/rng.js";
-import { dealHand, difficultyTier, drawHand, maxPlaceable, requirementForTier } from "../src/deal.js";
+import { adaptiveWeight, dealHand, difficultyTier, drawHand, maxPlaceable, requirementForTier } from "../src/deal.js";
 
 function randomBoard(seed: bigint, targetFillRatio: number): bigint {
   let state: RngState = createRngFromSeed(seed);
@@ -80,6 +80,35 @@ describe("maxPlaceable", () => {
     }
     const hand = [getPiece("I2H")];
     expect(maxPlaceable(board, hand)).toBe(0);
+  });
+});
+
+describe("adaptiveWeight: crowded-board bias scales with tier", () => {
+  it("protects against large pieces at gentle, but boosts them at hard", () => {
+    const large = PIECE_CATALOGUE.find((p) => cellCount(p) >= 5) as Piece;
+    const baseline = large.weight;
+    expect(adaptiveWeight(large, 0.7, "gentle")).toBeLessThan(baseline);
+    expect(adaptiveWeight(large, 0.7, "normal")).toBeLessThan(baseline);
+    expect(adaptiveWeight(large, 0.7, "normal")).toBeGreaterThan(adaptiveWeight(large, 0.7, "gentle"));
+    expect(adaptiveWeight(large, 0.7, "hard")).toBeGreaterThan(baseline);
+  });
+
+  it("a crowded board deals a large piece far more often at hard tier than at gentle", () => {
+    let state = createRngFromSeed(555n);
+    let gentleHits = 0;
+    let hardHits = 0;
+    const trials = 4000;
+    for (let i = 0; i < trials; i++) {
+      const [gentleHand, s1] = drawHand(state, 0.7, "gentle");
+      const [hardHand, s2] = drawHand(s1, 0.7, "hard");
+      state = s2;
+      if (gentleHand.some((p) => cellCount(p) >= 5)) gentleHits++;
+      if (hardHand.some((p) => cellCount(p) >= 5)) hardHits++;
+    }
+    // Directional, not a tight bound — pinning an exact ratio would make this
+    // brittle to future weight retuning; the point is hard is meaningfully
+    // riskier, not by exactly how much.
+    expect(hardHits).toBeGreaterThan(gentleHits * 2);
   });
 });
 
