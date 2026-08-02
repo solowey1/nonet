@@ -15,6 +15,13 @@
       "when": 1785628746316,
       "tag": "0001_curly_dragon_lord",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785708284671,
+      "tag": "0002_classy_beast",
+      "breakpoints": true
     }
   ]
 }

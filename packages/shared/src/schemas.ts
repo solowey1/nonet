@@ -168,6 +168,9 @@ export const runFinishResponseSchema = z.object({
   // game-over screen; items were already granted at milestone time, not here.
   drops: z.array(powerupKindSchema),
   rank: z.number().int().positive().nullable(),
+  // Achievement ids newly unlocked by this run (§19 round 4) — rewards were
+  // already granted server-side; this is just what to toast on game-over.
+  unlockedAchievements: z.array(z.string()),
 });
 
 // --- POST /api/run/milestone ---
@@ -298,6 +301,28 @@ export const walletLinkResponseSchema = z.object({
   tonAddress: z.string().nullable(),
 });
 
+// --- GET /api/achievements (§19 round 4) ---
+
+export const achievementProgressSchema = z.object({
+  id: z.string(),
+  repeatable: z.boolean(),
+  unlocked: z.boolean(),
+  timesCompleted: z.number().int().nonnegative(),
+  lastCompletedAt: z.string().nullable(),
+  // `current`/`target` are always on the *same* scale as the achievement's
+  // condition threshold (a score, a piece count, a day count, ...) so the UI
+  // can render one generic "current / target" bar for every achievement
+  // without knowing what kind of condition backs it.
+  progress: z.object({
+    current: z.number().nonnegative(),
+    target: z.number().nonnegative(),
+  }),
+});
+
+export const achievementsResponseSchema = z.object({
+  achievements: z.array(achievementProgressSchema),
+});
+
 export type PowerupKind = z.infer<typeof powerupKindSchema>;
 export type Action = z.infer<typeof actionSchema>;
 export type InventoryConsumeRequest = z.infer<typeof inventoryConsumeRequestSchema>;
@@ -324,3 +349,5 @@ export type LeaderboardResponse = z.infer<typeof leaderboardResponseSchema>;
 export type ProfileResponse = z.infer<typeof profileResponseSchema>;
 export type WalletLinkRequest = z.infer<typeof walletLinkRequestSchema>;
 export type WalletLinkResponse = z.infer<typeof walletLinkResponseSchema>;
+export type AchievementProgress = z.infer<typeof achievementProgressSchema>;
+export type AchievementsResponse = z.infer<typeof achievementsResponseSchema>;

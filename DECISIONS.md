@@ -1485,3 +1485,141 @@ button is a perfect square with zero text content, with the count
 existing as a real sibling outside it. All 10 passed. 113 engine tests,
 57 API tests, `tsc --noEmit` across every package, and `vite build` all
 pass/succeed.
+
+## Round 4: piece-grab overlap, jagged 3x3 dividers, achievements, "pure game," and re-diagnosing the Monochrome sync
+
+### HandTray hit-areas: measured and clamped, not just uniformly enlarged
+
+Last round's fix gave every dealt piece the same generous `trayReserve`
+square hit-area (sized to the largest piece's 5x5 footprint) so a 1x1
+piece was as easy to grab as a 5-cell one — but on a narrow phone,
+`trayReserve` (up to ~150px) is far bigger than the actual gap between
+tray slots (`clamp(8px, 4vw, 24px)`, capped at 24px), so adjacent
+hit-areas overlapped and stole each other's taps — worse than before.
+Fixed by *measuring* rather than assuming: `HandTray` now holds a ref per
+slot, and a `useLayoutEffect` (so the corrected size lands before the
+first paint — no flash of oversized, overlapping hit-areas) computes each
+slot's real on-screen center via `getBoundingClientRect()`, takes the
+distance to its immediate left/right (portrait) or up/down (landscape)
+neighbor, and clamps that slot's hit-area to `min(trayReserve, that
+distance)` — generous where there's room, never overlapping where there
+isn't. Re-measured on a `ResizeObserver` over the slots (catches a piece
+changing size) plus `resize`/`orientationchange` listeners (catches a
+layout reflow the slots' own boxes don't change size for).
+
+### 3x3 board dividers: `border` was silently resizing bordered cells
+
+The divider lines were `border-right`/`border-bottom` applied directly to
+`.cell`, conditionally per cell. With `box-sizing: border-box` in effect
+globally (from the round-3 cascade-layers fix), a border on one side of a
+cell shrinks that cell's *padding box* on that side only — and
+`.cellInner` (the actual colored square) is absolutely positioned via
+`inset: 1.5px` relative to that padding box. So every cell touching a
+divider rendered its visible square measurably narrower/shorter than a
+non-bordered cell, on the divider side only — that asymmetric shrink,
+not the divider *pattern* itself, is what produced the "jagged, in one
+direction" look; the divider lines themselves were already perfectly
+continuous (the board is a zero-gap CSS grid). Fixed by repainting the
+same lines with `box-shadow: inset` instead of `border` — visually
+identical, but `box-shadow` never participates in the box model, so
+`.cellInner` is now exactly the same size on every cell regardless of
+which sides carry a divider. Verified directly: every cell's computed
+`cellInner` width/height collapses to a single value across all 81 cells
+in a live browser, divider or not.
+
+### Achievements system
+
+`packages/shared/src/achievements.ts` is a data-driven catalogue (same
+pattern as `themes.ts`) of 14 achievements — the mandatory "first 5000
+points," the 3 repeatable examples given verbatim (7-day login streak,
+7-day 1000+/day score streak, 50000 points/week), and 10 invented ones
+spanning first-line-clear, first-perfect-clear, two combo tiers, two
+lifetime-piece-count tiers, a single-run high score, a "clean" high score
+(no power-up used), owning every premium theme, and a repeatable
+5-perfect-clears-in-a-week. Each has a `condition` (one of eleven kinds —
+single-run stats, a lifetime aggregate, owns-all-themes, or a
+daily/weekly window) and a `reward` (a flat inventory grant, or — for the
+mandatory achievement only — "unlock this theme for free, or these items
+instead if it's already owned").
+
+Evaluation lives in `apps/api/src/services/achievements.ts`, called from
+two places: `/api/run/finish` (every `run_*` condition, plus the
+lifetime/owns-all-themes/daily-window ones, using the just-verified run's
+stats) and `/api/session` (just `login_streak`, off the login-streak
+number `grantDailyGiftIfNeeded` already computes). A repeatable
+achievement's only persisted state beyond `timesCompleted` is
+`progress.lastAwardedDay` — a day-gate that stops a *sustained* condition
+(a week-long streak that keeps holding, a rolling sum that stays above
+threshold) from re-awarding on every single evaluation; it re-arms once
+`condition.days` have passed since the last award, deliberately mirroring
+`dailyGift.ts`'s existing `streak % STREAK_BONUS_EVERY_DAYS` cadence
+rather than inventing a new one. `daily_score_streak`/`weekly_total_score`/
+`weekly_perfect_clears` needed `dailyStats` to actually track cumulative
+per-day totals — it had `bestScore`/`runs` columns that were *never
+written* past their initial insert (dead scaffolding); added
+`totalScore`/`perfectClears` columns and now upsert all of it at run/finish
+time. `GET /api/achievements` recomputes live progress on every read (best
+single-run stats via one aggregate query, a rolling 7-day window via a
+date-ranged sum, the real current daily-score streak length via a capped
+lookback) rather than caching a progress number anywhere, since none of
+these reads are hot paths.
+
+Tested at the service level for the reward-branching logic (`evaluateRunAchievements`
+called directly with a constructed run context) rather than via a fully
+legitimate high-scoring replayed run — the existing greedy test bot
+(`autoplayGreedy`, built for the milestone tests' 1000-point threshold)
+turns out to rarely clear high enough to hit 5000 within a practical
+number of attempts, since difficulty escalation bites hard at that range;
+the reward logic itself doesn't care how a qualifying score was reached,
+so testing it directly against the service is both faster and more
+deterministic. The `weekly_50000` test does go through the full HTTP
+round trip (`/api/session` → `/api/run/finish`), pre-seeding six days of
+`dailyStats` directly and letting a real (trivial) run supply the seventh
+— that's what actually proves the run/finish → `evaluateRunAchievements` →
+`dailyStats` upsert wiring holds together end to end.
+
+### "Pure game" indicator
+
+The engine's `GameState.powerupsUsed` counter already existed and was
+already live in the store — this needed no new engine or store work, just
+a UI consumer: a small badge next to the score, shown while
+`game.powerupsUsed === 0`, gone the instant it isn't.
+
+### Monochrome missing from the Shop, revisited: same root cause, now with harder evidence
+
+Reported again, more pointedly, after last round's deployment-timing
+explanation — worth re-verifying rather than repeating the same answer.
+Re-checked every layer between the database and the Shop screen: the
+`GET /api/shop` query, the `active=true` filter, `seedShopSkus`'s upsert,
+nginx's `/api/` proxy (no caching directives on it at all — only
+`/assets/` and `/` have `Cache-Control` rules), and the frontend's
+`getShop()` (a plain uncached `fetch`, refired fresh every time the Shop
+mounts) — all confirmed clean, so the staleness has to be server-side.
+Found the *mechanism*, not just the theory this time: `docker/
+api.Dockerfile` bundles `packages/shared`'s real TypeScript source
+straight into the api image via esbuild at *build* time (`apps/api/
+build.mjs` — the api never sees `@nonet/shared` as an installed package,
+it inlines the source because that package points `main` at source, not
+a compiled artifact). That means the api image's copy of
+`PREMIUM_THEMES` — and therefore what `seedShopSkus()` seeds into
+`shop_skus` — is frozen at whatever `themes.ts` contained when the
+**api** image was last built, completely independent of whether the
+**web** image has since been rebuilt with Monochrome in it. Concrete
+diagnostic for next time: `docker compose exec nonet-api grep -c
+monochrome dist/index.js` (0 means the running api image predates
+Monochrome); fix is `docker compose build api web && docker compose up
+-d api web` — rebuilding only `web` will never fix this, no matter how
+many times it's redeployed.
+
+### Verified with headless Chromium (Vite dev server + real Postgres + Fastify dev server + mocked Telegram WebApp)
+
+9 checks: Achievements screen opens from the main menu and lists all 14
+achievements including the mandatory one; a fresh run shows the "Pure
+game" badge; the 3 dealt pieces' grab hit-areas (measured via real
+`getBoundingClientRect()`) never overlap each other; every board cell's
+`cellInner` collapses to one identical width and one identical height
+across all 81 cells regardless of which carry a 3x3 divider, with at
+least some cells confirmed to actually carry one. All 9 passed. 113
+engine tests, 62 API tests (including 5 new achievement tests), `tsc
+--noEmit` across every package, and a full workspace `vite build` all
+pass/succeed.

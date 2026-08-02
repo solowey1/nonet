@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Share2, Star } from "lucide-react";
+import { Award, Share2, Star } from "lucide-react";
 import type { GameState } from "@nonet/engine";
 import type { FinishResult, ReviveOutcome } from "../store/gameStore.js";
 import { hapticSelection, shareViaTelegram } from "../telegram/webapp.js";
@@ -62,6 +62,16 @@ export function GameOverOverlay({ game, finishResult, revivePending, onRestart, 
           <span className="block text-base font-semibold text-foreground">{game.perfectClears}</span>
         </div>
       </div>
+      {finishResult && finishResult.unlockedAchievements.length > 0 && (
+        <div className="flex flex-col items-center gap-1">
+          {finishResult.unlockedAchievements.map((id) => (
+            <div key={id} className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary">
+              <Award className="h-4 w-4" aria-hidden="true" />
+              {t("achievements.unlockedToast", { name: t(`achievements.names.${id}`) })}
+            </div>
+          ))}
+        </div>
+      )}
       {reviveHint && <div className="min-h-[1.1em] text-sm text-muted-foreground">{reviveHint}</div>}
       <div className="flex gap-2.5">
         <Button variant="outline" size="lg" disabled={revivePending} onClick={() => void handleRevive()}>

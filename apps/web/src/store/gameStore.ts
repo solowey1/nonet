@@ -11,9 +11,10 @@ import {
   type Board,
   type GameState,
 } from "@nonet/engine";
-import type { Action as SharedAction, PowerupKind, ProfileResponse } from "@nonet/shared";
+import type { Action as SharedAction, AchievementProgress, PowerupKind, ProfileResponse } from "@nonet/shared";
 import {
   ApiError,
+  getAchievements,
   getProfile,
   postDevSession,
   postInventoryConsume,
@@ -67,6 +68,7 @@ export interface FinishResult {
   readonly score: number;
   readonly verified: boolean;
   readonly rank: number | null;
+  readonly unlockedAchievements: readonly string[];
 }
 
 export type BootStatus = "loading" | "ready" | "error";
@@ -82,7 +84,7 @@ export type ReviveOutcome = "purchased" | "cancelled" | "pending" | "failed";
  * one level deep (reached only from the menu), so "back" from any of them
  * always means "menu" — a flat graph, not a generic stack/router.
  */
-export type Screen = "menu" | "game" | "leaderboard" | "shop" | "settings";
+export type Screen = "menu" | "game" | "leaderboard" | "shop" | "settings" | "achievements";
 
 interface GameStoreState {
   readonly bootStatus: BootStatus;
@@ -103,6 +105,7 @@ interface GameStoreState {
   readonly finishResult: FinishResult | null;
   readonly revivePending: boolean;
   readonly profile: ProfileResponse | null;
+  readonly achievements: readonly AchievementProgress[] | null;
 
   bootstrap(): Promise<void>;
   place(slot: 0 | 1 | 2, row: number, col: number): boolean;
@@ -115,12 +118,14 @@ interface GameStoreState {
   buyRevive(): Promise<ReviveOutcome>;
   refreshInventory(): Promise<void>;
   loadProfile(): Promise<void>;
+  loadAchievements(): Promise<void>;
   newRun(): Promise<void>;
   continueRun(): void;
   goToMenu(): void;
   goToLeaderboard(): void;
   goToShop(): void;
   goToSettings(): void;
+  goToAchievements(): void;
 }
 
 let clearEventCounter = 0;
@@ -187,11 +192,22 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     setClosingConfirmation(false);
     try {
       const result = await postRunFinish(runToken, runId, actionLog);
-      set({ finishResult: { score: result.score, verified: result.verified, rank: result.rank } });
+      set({
+        finishResult: {
+          score: result.score,
+          verified: result.verified,
+          rank: result.rank,
+          unlockedAchievements: result.unlockedAchievements,
+        },
+      });
       if (result.verified) void get().loadProfile(); // best score may have just changed
+      // Achievement rewards (and any milestone drops) are granted server-side
+      // without a matching client-side balance update — only worth the round
+      // trip when something was actually earned.
+      if (result.unlockedAchievements.length > 0) void get().refreshInventory();
     } catch (err) {
       console.error("run/finish failed — local score still stands, just unranked", err);
-      set({ finishResult: { score: game.score, verified: false, rank: null } });
+      set({ finishResult: { score: game.score, verified: false, rank: null, unlockedAchievements: [] } });
     }
   }
 
@@ -297,6 +313,7 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     finishResult: null,
     revivePending: false,
     profile: null,
+    achievements: null,
 
     async bootstrap() {
       await bootstrapTelegramWebApp();
@@ -531,6 +548,17 @@ export const useGameStore = create<GameStoreState>((set, get) => {
       }
     },
 
+    async loadAchievements() {
+      const { sessionToken } = get();
+      if (!sessionToken) return;
+      try {
+        const { achievements } = await getAchievements(sessionToken);
+        set({ achievements });
+      } catch (err) {
+        console.error("failed to load achievements", err);
+      }
+    },
+
     async newRun() {
       const { sessionToken, game } = get();
       if (!sessionToken) return;
@@ -570,6 +598,11 @@ export const useGameStore = create<GameStoreState>((set, get) => {
 
     goToSettings() {
       set({ screen: "settings" });
+    },
+
+    goToAchievements() {
+      set({ screen: "achievements" });
+      void get().loadAchievements();
     },
   };
 });

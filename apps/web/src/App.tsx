@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Home, Store } from "lucide-react";
+import { Home, Sparkles, Store } from "lucide-react";
 import type { PowerupKind } from "@nonet/shared";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Board } from "./components/Board.js";
 import { ComboPopup } from "./components/ComboPopup.js";
@@ -9,6 +10,7 @@ import { DragLayer } from "./components/DragLayer.js";
 import { GameOverOverlay } from "./components/GameOverOverlay.js";
 import { HandTray } from "./components/HandTray.js";
 import { InventoryBar } from "./components/InventoryBar.js";
+import { AchievementsScreen } from "./components/AchievementsScreen.js";
 import { LeaderboardScreen } from "./components/LeaderboardScreen.js";
 import { MainMenu } from "./components/MainMenu.js";
 import { RocketGutters } from "./components/RocketGutters.js";
@@ -80,9 +82,17 @@ export function App() {
       return <ShopPage />;
     case "settings":
       return <SettingsScreen />;
+    case "achievements":
+      return <AchievementsPage />;
     case "game":
       return <Game boardRef={boardRef} />;
   }
+}
+
+function AchievementsPage() {
+  const achievements = useGameStore((s) => s.achievements);
+  const goToMenu = useGameStore((s) => s.goToMenu);
+  return <AchievementsScreen achievements={achievements} onClose={goToMenu} />;
 }
 
 function LeaderboardPage() {
@@ -183,6 +193,12 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
               profile?.bestRun ? Math.max(profile.bestRun.score, game.score) : game.score > 0 ? game.score : null
             }
           />
+          {/* Disappears the instant a powerup is used (§19 round 4) — game.powerupsUsed is already live engine state. */}
+          {game.powerupsUsed === 0 && (
+            <Badge variant="secondary" className="mt-1 w-fit">
+              <Sparkles className="h-3 w-3" aria-hidden="true" /> {t("game.pureRun")}
+            </Badge>
+          )}
         </div>
         <div className={styles.controlsArea}>
           <Button variant="secondary" size="icon" onClick={goToMenu} aria-label={t("game.home")}>

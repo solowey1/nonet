@@ -38,6 +38,32 @@ export async function grantWelcomeGift(db: Executor, userId: bigint): Promise<vo
 }
 
 /**
+ * General-purpose multi-item grant, e.g. an achievement reward (§19 round 4)
+ * or a theme unlock — `grantWelcomeGift` above is really just a fixed call
+ * to this same ledger+balance pattern, kept separate since its item list is
+ * a hardcoded starter kit rather than caller-supplied.
+ */
+export async function grantItems(
+  db: Executor,
+  userId: bigint,
+  items: Readonly<Record<string, number>>,
+  reason: "gift" | "admin",
+  ref: string | null = null,
+): Promise<void> {
+  for (const [item, qty] of Object.entries(items)) {
+    if (qty <= 0) continue;
+    await db.insert(inventoryLedger).values({ userId, item, delta: qty, reason, ref });
+    await db
+      .insert(inventoryBalance)
+      .values({ userId, item, qty })
+      .onConflictDoUpdate({
+        target: [inventoryBalance.userId, inventoryBalance.item],
+        set: { qty: sql`${inventoryBalance.qty} + ${qty}` },
+      });
+  }
+}
+
+/**
  * Every power-up action in a finished run's log must carry a `consumeToken`
  * that really was issued — by `/api/inventory/consume` — for *this* run and
  * *that* item, and no token may cover more than one action. This is what

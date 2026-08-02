@@ -18,6 +18,6 @@ export async function migrateTestDb(): Promise<void> {
 
 export async function resetTestDb(): Promise<void> {
   const client = postgres(env.DATABASE_URL, { max: 1 });
-  await client`TRUNCATE TABLE inventory_ledger, inventory_balance, purchases, daily_stats, runs, users RESTART IDENTITY CASCADE`;
+  await client`TRUNCATE TABLE inventory_ledger, inventory_balance, purchases, daily_stats, user_achievements, runs, users RESTART IDENTITY CASCADE`;
   await client.end();
 }
