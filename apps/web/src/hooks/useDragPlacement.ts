@@ -26,6 +26,15 @@ export function useDragPlacement(boardRef: RefObject<HTMLDivElement | null>) {
         if (!boardEl || !piece) return null;
 
         const rect = boardEl.getBoundingClientRect();
+        // Clamping the snapped row/col below keeps a piece whose *center* is
+        // over the board fully on-grid even near an edge — but without this
+        // check, it also clamps a pointer that's left the board entirely
+        // (e.g. still over the hand tray) onto some in-bounds cell, letting
+        // a release there both show a ghost and place the piece nowhere near
+        // the pointer. No ghost, no placement, once the pointer itself is
+        // outside the board's own rect.
+        if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return null;
+
         const { row: fRow, col: fCol } = pointToFractionalCell(rect, x, y);
         const row = clamp(Math.round(fRow - piece.h / 2), 0, BOARD_SIZE - piece.h);
         const col = clamp(Math.round(fCol - piece.w / 2), 0, BOARD_SIZE - piece.w);

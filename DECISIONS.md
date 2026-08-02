@@ -931,3 +931,40 @@ confirmed the board's position and size still never moves by a pixel
 across many hand changes; a separate portrait-viewport screenshot confirms
 no visual regression there. 113 engine tests, 51 API tests, `tsc --noEmit`,
 and `vite build` all still pass/succeed.
+
+# Two more user-reported bugs
+
+## The "region too large" hint could still push the board down
+
+The earlier hand-tray jump fix reserved a `min-height` for `.hint`, but
+`min-height` is only a floor — the actual message ("Region too large (N
+cells) — pick a smaller pocket") wraps to 2 lines on a narrower viewport,
+and a 2-line box is taller than a 1-line `min-height`, pushing everything
+below it (the board) down exactly like the original bug. Fixed by using a
+fixed `height` (not `min-height`) with `overflow: hidden` instead — a box
+that can't grow past its set height can't push anything, regardless of how
+many lines the text wraps to.
+
+## Releasing a drag outside the board could still place it there
+
+Both `useDragPlacement` (piece placement) and `usePowerupTargeting`
+(pencil/eraser/bomb/fill) compute a target row/col by `clamp`ing the
+pointer's fractional board position into `[0, BOARD_SIZE)` — correct for
+keeping a piece whose center is near an edge fully on-grid, but it clamped
+*any* pointer position this way, including one that had left the board
+rect entirely (e.g. still hovering the hand tray or the score/inventory
+area above it). That meant releasing off the board could still snap to
+and place on some in-bounds cell nowhere near the pointer, and the ghost
+preview would render there too — clearly wrong once you notice the pointer
+was never actually over the board. Fixed the same way in both hooks: bail
+out to `null` (no ghost/preview, no placement/commit) the moment the raw
+pointer coordinates fall outside the board element's own
+`getBoundingClientRect()`, before any clamping happens.
+
+Verified both directly, not just by re-reading the fix: for the hint, the
+board's `getBoundingClientRect()` was read before and during a real
+region-too-large hint and confirmed byte-identical; for the drag fix,
+dragging a piece onto the board (confirmed via `[data-ghost]` cells
+actually present) and then off it again confirmed the ghost cells vanish
+entirely, and releasing there confirmed the hand and board state are
+completely unchanged (no phantom placement).

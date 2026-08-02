@@ -150,7 +150,12 @@
 }
 
 .hint {
-  min-height: 1.2em;
+  /* Fixed (not min-) height: the message can wrap to 2 lines on a narrow
+     viewport, and a min-height only sets a floor — it doesn't stop the box
+     from growing past it and pushing the board down. A fixed height with
+     clipped overflow can never grow no matter how the text wraps. */
+  height: 2.4em;
+  overflow: hidden;
   text-align: center;
   font-size: 0.8rem;
   color: var(--nonet-danger);
