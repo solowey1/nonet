@@ -64,7 +64,7 @@ export function App() {
       <div className={styles.boot}>
         <p className={styles.bootError}>{t("boot.sessionError")}</p>
         <p>{bootError}</p>
-        <Button className="text-white" onClick={() => void bootstrap()}>
+        <Button onClick={() => void bootstrap()}>
           {t("boot.retry")}
         </Button>
       </div>

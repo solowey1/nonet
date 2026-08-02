@@ -48,73 +48,38 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/*
+ * shadcn's tokens deliberately do NOT carry their own generated light/dark
+ * values (the `.dark`-class toggle shadcn normally uses is never applied
+ * anywhere in this app — see DECISIONS.md). Every one of them instead
+ * aliases the app's own `--nonet-*` custom properties from styles/theme.css,
+ * which already handles the full theme story: Telegram's live theme sync,
+ * an explicit Light/Dark override, and purchasable premium palettes (all
+ * driven from webapp.ts, set as inline styles that beat this stylesheet).
+ * One source of truth — a Tailwind class like `bg-card` and an existing
+ * component still reading `var(--nonet-board)` directly now always agree,
+ * in every theme, without a `.dark` class ever needing to exist.
+ */
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.141 0.005 285.823);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.141 0.005 285.823);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.141 0.005 285.823);
-    --primary: oklch(0.5 0.134 242.749);
-    --primary-foreground: oklch(0.977 0.013 236.62);
-    --secondary: oklch(0.967 0.001 286.375);
-    --secondary-foreground: oklch(0.21 0.006 285.885);
-    --muted: oklch(0.967 0.001 286.375);
-    --muted-foreground: oklch(0.552 0.016 285.938);
-    --accent: oklch(0.967 0.001 286.375);
-    --accent-foreground: oklch(0.21 0.006 285.885);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.92 0.004 286.32);
-    --input: oklch(0.92 0.004 286.32);
-    --ring: oklch(0.705 0.015 286.067);
-    --chart-1: oklch(0.81 0.117 11.638);
-    --chart-2: oklch(0.645 0.246 16.439);
-    --chart-3: oklch(0.586 0.253 17.585);
-    --chart-4: oklch(0.514 0.222 16.935);
-    --chart-5: oklch(0.455 0.188 13.697);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.141 0.005 285.823);
-    --sidebar-primary: oklch(0.588 0.158 241.966);
-    --sidebar-primary-foreground: oklch(0.977 0.013 236.62);
-    --sidebar-accent: oklch(0.967 0.001 286.375);
-    --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
-    --sidebar-border: oklch(0.92 0.004 286.32);
-    --sidebar-ring: oklch(0.705 0.015 286.067);
-}
-
-.dark {
-    --background: oklch(0.141 0.005 285.823);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.21 0.006 285.885);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.21 0.006 285.885);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.443 0.11 240.79);
-    --primary-foreground: oklch(0.977 0.013 236.62);
-    --secondary: oklch(0.274 0.006 286.033);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.274 0.006 286.033);
-    --muted-foreground: oklch(0.705 0.015 286.067);
-    --accent: oklch(0.274 0.006 286.033);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.552 0.016 285.938);
-    --chart-1: oklch(0.81 0.117 11.638);
-    --chart-2: oklch(0.645 0.246 16.439);
-    --chart-3: oklch(0.586 0.253 17.585);
-    --chart-4: oklch(0.514 0.222 16.935);
-    --chart-5: oklch(0.455 0.188 13.697);
-    --sidebar: oklch(0.21 0.006 285.885);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.685 0.169 237.323);
-    --sidebar-primary-foreground: oklch(0.293 0.066 243.157);
-    --sidebar-accent: oklch(0.274 0.006 286.033);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.552 0.016 285.938);
+    --background: var(--nonet-bg);
+    --foreground: var(--nonet-text);
+    --card: var(--nonet-board);
+    --card-foreground: var(--nonet-text);
+    --popover: var(--nonet-board);
+    --popover-foreground: var(--nonet-text);
+    --primary: var(--nonet-button-bg);
+    --primary-foreground: var(--nonet-button-fg);
+    --secondary: var(--nonet-cell-empty);
+    --secondary-foreground: var(--nonet-text);
+    --muted: var(--nonet-cell-empty);
+    --muted-foreground: var(--nonet-text-dim);
+    --accent: var(--nonet-cell-empty);
+    --accent-foreground: var(--nonet-text);
+    --destructive: var(--nonet-danger);
+    --border: var(--nonet-block-divider);
+    --input: var(--nonet-block-divider);
+    --ring: var(--nonet-accent);
+    --radius: var(--nonet-radius);
 }
 
 @layer base {

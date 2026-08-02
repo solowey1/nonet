@@ -1364,3 +1364,124 @@ in-game Shop button has empty text content with a real `aria-label`.
 113 engine tests, 58 API tests (one new: the Monochrome theme SKU seeds
 and is listed), `tsc --noEmit` across every package, and `vite build`
 all pass/succeed.
+
+# §19 continued — a real theming bug, not a cosmetic one
+
+## `theme.css`'s unlayered `button { color: inherit; }` silently beat every Button's text color, everywhere
+
+The user reported light theme buttons showing dark text on a dark
+background — investigating (with no image actually attached to inspect,
+only the description) turned up something bigger than a single button:
+`theme.css` predates the shadcn migration and sets its element resets
+(`*`, `body`, `button`, `:focus-visible`, ...) as plain, unlayered CSS.
+Tailwind's own utilities (from `index.css`'s `@import "tailwindcss"`) are
+generated *inside* named CSS cascade layers. Per the cascade-layers spec,
+**styles outside any layer always win over styles inside one, regardless
+of specificity or source order** — so `button { color: inherit }`,
+despite being a plain low-specificity element selector, was beating every
+Button component's `text-primary-foreground` (or `text-white`) utility
+class everywhere in the app, silently, this whole session. It didn't look
+obviously broken before now only because dark theme's *inherited* body
+text color (`--nonet-text`, near-white) happened to look plausible next
+to a light-blue accent button — the exact same bug, just coincidentally
+harmless-looking. Light theme's inherited text (`--nonet-text`, near-
+black) against a blue button made it impossible to miss. Confirmed by
+directly reading `getComputedStyle` on a live button: `--primary-
+foreground` itself correctly resolved to the intended color the whole
+time; the element's actual rendered `color` didn't match it at all,
+confirming a cascade problem, not a token problem. Fixed by wrapping
+`theme.css`'s element resets in `@layer base { ... }` — CSS layer names
+are global across the whole document regardless of which file declares
+them, so this merges into the *same* "base" layer Tailwind's own
+`@import "tailwindcss"` already establishes, correctly losing to
+Tailwind's "utilities" layer exactly as intended. This is also almost
+certainly why last round's "Shop buy button text is white" Playwright
+check passed for the wrong reason: it matched dark theme's inherited
+near-white text color by coincidence, not the `text-white` class actually
+taking effect — re-verified after this fix with an exact-value assertion
+(`rgb(255, 255, 255)`, not a loose "is it light-ish" regex).
+
+## Two disconnected theme systems, unified into one
+
+Related but distinct: shadcn's own tokens (`--background`, `--primary`,
+etc., in `index.css`) ship with a static light `:root` block and a
+separate static `.dark` block, switched by a `.dark` class Tailwind's
+`@custom-variant dark (&:is(.dark *))` expects on some ancestor —
+nothing in this app ever added that class. So every Tailwind-styled
+screen (Settings/Shop/Leaderboard/MainMenu/GameOver) was permanently
+stuck on shadcn's *own* light palette, completely deaf to the app's real
+`--nonet-*` theme system (Telegram sync, explicit Light/Dark, premium
+palettes) that the board/HUD/tray still correctly follow via existing CSS
+modules — this is what "dark theme now looks like this" was actually
+showing: light-colored menu chrome next to a dark board. Fixed by
+deleting shadcn's static `:root`/`.dark` blocks entirely and aliasing
+every shadcn token to the matching `--nonet-*` custom property instead
+(`--background: var(--nonet-bg)`, `--primary: var(--nonet-button-bg)`,
+...). No `.dark` class needed anywhere now — both systems are one system,
+and `webapp.ts`'s existing inline-style mechanism (which already beats
+any stylesheet rule) drives all of it uniformly.
+
+## A dedicated `--nonet-button-bg`, not a blanket color relayout
+
+The request clarified two things that sound similar but aren't: (1) only
+the Shop's *buy* buttons should get white text — nothing else should be
+"customized" — and (2) light theme specifically needs its own button
+background, since its accent (a fairly saturated blue) doesn't read well
+under dark button text. So: `--nonet-button-fg` is one fixed dark color
+(`#0b0e13`) across every theme, matching what "isn't customized"
+everywhere except the Shop's buy buttons (which explicitly override to
+white via `text-white`, exactly as asked). `--nonet-button-bg` defaults to
+`var(--nonet-accent)` (works fine for dark/Sunset/Ocean/Neon/Monochrome —
+their accents are all light/bright enough for dark text) but is
+overridden to a dedicated Lime (`#84cc16`) specifically for the "Light"
+theme, in both `theme.css`'s `prefers-color-scheme: light` fallback and
+`webapp.ts`'s explicit `LIGHT_PALETTE` application — reverted the
+blanket `text-white` I'd added to MainMenu's Continue, GameOverOverlay's
+Play Again, and the boot screen's Retry button back to the Button
+component's own (now correctly dark) default.
+
+## Power-up buttons: count moved outside the square, not just repositioned within it
+
+Last round's fix put the count below (portrait) / beside (landscape) the
+icon, but still *inside* the same bordered button box, stretching it away
+from square. Restructured `InventoryBar` so each power-up is a wrapper
+`<div>` containing a plain square `<button>` (icon only, `aspect-square`,
+fixed `h-11 w-11`) and a separate sibling `<span>` for the count outside
+it — the wrapper itself flips `flex-col`/`flex-row` per orientation
+(matching the same `landscape:` Tailwind variant used before), so the
+button's own shape never changes.
+
+## Monochrome missing from the Shop while present in Settings: a deployment-sync artifact, not a bug
+
+Settings reads `PREMIUM_THEMES` directly from the `@nonet/shared` package
+bundled into whatever web build is currently deployed — always in sync
+with that build's code. The Shop's list comes from the live `shop_skus`
+database table, populated by `seedShopSkus()` (an idempotent upsert) which
+only runs when the **api** container actually restarts (`docker/
+api.Dockerfile`'s `CMD` runs migrate-then-serve on every boot, guarded by
+an advisory lock). If the web image was rebuilt/redeployed after
+Monochrome was added but the api image wasn't restarted since, Settings
+shows the new theme (compiled into the web bundle) while the Shop still
+serves the old, unmigrated database rows — exactly the reported symptom.
+Confirmed there's no code-level bug: `GET /api/shop`'s `active = true`
+filter, the upsert's `onConflictDoUpdate`, and a fresh migration run
+against the deployed database all check out — `curl`ing a freshly
+migrated instance's `/api/shop` lists `theme_monochrome` correctly. No
+code change; the fix is redeploying/restarting **both** the `web` and
+`api` services together (`docker compose up -d --build`), not just one.
+
+## Verified with headless Chromium (Postgres, API, mocked Telegram WebApp with realistic themeParams)
+
+10 checks, this time with exact-value assertions rather than loose regex
+after the earlier false-positive: body background matches Telegram's
+real dark `bg_color` exactly (not shadcn's static light palette);
+Settings screen background matches the app's dark bg exactly (same
+value, same source — the two systems now agree); selecting Light sets
+`--nonet-bg` to the light palette and `--nonet-button-bg` to the exact
+Lime hex; the Continue button's actual computed background is that exact
+Lime RGB and its text is exact dark RGB, not inherited near-black-passing-
+as-white; a Shop buy button's text is exact white RGB; every power-up
+button is a perfect square with zero text content, with the count
+existing as a real sibling outside it. All 10 passed. 113 engine tests,
+57 API tests, `tsc --noEmit` across every package, and `vite build` all
+pass/succeed.
