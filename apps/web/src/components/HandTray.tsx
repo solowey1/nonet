@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { PIECE_CATALOGUE, type Hand } from "@nonet/engine";
 import { PieceView } from "./PieceView.js";
 import { pieceFamily } from "../utils/pieceFamily.js";
@@ -21,6 +22,7 @@ interface HandTrayProps {
 }
 
 export function HandTray({ hand, cellSize, draggingSlot, onGrab }: HandTrayProps) {
+  const { t } = useTranslation();
   const traySlotCell = cellSize * TRAY_SCALE;
   // Reserves whichever axis actually varies per hand: height in portrait's
   // row layout, width in landscape's column layout (see HandTray.module.css)
@@ -36,20 +38,29 @@ export function HandTray({ hand, cellSize, draggingSlot, onGrab }: HandTrayProps
       {([0, 1, 2] as const).map((slot) => {
         const piece = hand[slot];
         return (
-          <div
-            key={slot}
-            className={styles.slot}
-            data-empty={!piece}
-            data-dragging={draggingSlot === slot}
-            role="button"
-            aria-label={piece ? `piece ${piece.id}, tap and drag to place` : undefined}
-            onPointerDown={(event) => {
-              if (!piece) return;
-              event.currentTarget.setPointerCapture(event.pointerId);
-              onGrab(slot, event.pointerId, event.clientX, event.clientY);
-            }}
-          >
+          <div key={slot} className={styles.slot} data-empty={!piece} data-dragging={draggingSlot === slot}>
             {piece && <PieceView piece={piece} cellSize={traySlotCell} family={pieceFamily(piece.cells.length)} />}
+            {/*
+              A separate, absolutely-centered hit-area rather than sizing
+              `.slot` itself to `trayReserve`: the *visible* piece stays its
+              natural size (a 1-cell piece still looks small), but every
+              piece gets the same generous 5x5-cell-equivalent grab target
+              regardless of shape — without blowing out the tray's flex
+              layout width (3 slots literally sized to the largest piece's
+              footprint wouldn't fit side by side on a narrow phone) (§19).
+            */}
+            {piece && (
+              <div
+                className={styles.hitArea}
+                style={{ width: trayReserve, height: trayReserve }}
+                role="button"
+                aria-label={t("game.grabPiece", { id: piece.id })}
+                onPointerDown={(event) => {
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  onGrab(slot, event.pointerId, event.clientX, event.clientY);
+                }}
+              />
+            )}
           </div>
         );
       })}

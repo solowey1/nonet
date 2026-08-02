@@ -1,30 +1,51 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ArrowLeft, Check, Link2, Lock, Vibrate } from "lucide-react";
 import { PREMIUM_THEMES, themeInventoryKey } from "@nonet/shared";
 import { postWalletLink } from "../api/client.js";
 import { useGameStore } from "../store/gameStore.js";
 import {
+  getLanguageMode,
   getThemeMode,
   hapticSelection,
   isHapticsEnabled,
   setHapticsEnabled,
+  setLanguageMode,
   setThemeMode,
+  type LanguageMode,
   type ThemeMode,
 } from "../telegram/webapp.js";
 import { currentWalletAddress, disconnectWallet, onWalletChange, openWalletConnectModal } from "../telegram/tonConnect.js";
-import styles from "./SettingsScreen.module.css";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 
 function formatWalletAddress(address: string): string {
   return address.length > 10 ? `${address.slice(0, 4)}…${address.slice(-4)}` : address;
 }
 
-const BASE_THEMES: ReadonlyArray<{ mode: ThemeMode; label: string }> = [
-  { mode: "auto", label: "Auto" },
-  { mode: "light", label: "Light" },
-  { mode: "dark", label: "Dark" },
+const BASE_THEMES: readonly { mode: ThemeMode; labelKey: string }[] = [
+  { mode: "auto", labelKey: "settings.themeAuto" },
+  { mode: "light", labelKey: "settings.themeLight" },
+  { mode: "dark", labelKey: "settings.themeDark" },
 ];
 
+const LANGUAGES: readonly { mode: LanguageMode; labelKey: string }[] = [
+  { mode: "auto", labelKey: "settings.languageAuto" },
+  { mode: "en", labelKey: "settings.languageEn" },
+  { mode: "ru", labelKey: "settings.languageRu" },
+];
+
+function themeOptionClasses(active: boolean, locked: boolean) {
+  return cn(
+    "flex min-h-12 items-center gap-2 rounded-lg border bg-muted px-3.5 py-2.5 text-sm",
+    active ? "border-primary text-primary" : "border-border text-foreground",
+    locked && "text-muted-foreground",
+  );
+}
+
 export function SettingsScreen() {
+  const { t } = useTranslation();
   const inventory = useGameStore((s) => s.inventory);
   const sessionToken = useGameStore((s) => s.sessionToken);
   const goToMenu = useGameStore((s) => s.goToMenu);
@@ -32,6 +53,7 @@ export function SettingsScreen() {
   const loadProfile = useGameStore((s) => s.loadProfile);
 
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getThemeMode());
+  const [languageMode, setLanguageModeState] = useState<LanguageMode>(() => getLanguageMode());
   const [hapticsOn, setHapticsOn] = useState(() => isHapticsEnabled());
   const [walletAddress, setWalletAddress] = useState<string | null>(() => currentWalletAddress());
   const [walletBusy, setWalletBusy] = useState(false);
@@ -55,29 +77,35 @@ export function SettingsScreen() {
     setThemeModeState(mode);
   };
 
+  const selectLanguage = (mode: LanguageMode) => {
+    hapticSelection();
+    setLanguageMode(mode);
+    setLanguageModeState(mode);
+  };
+
   return (
-    <div className={styles.page}>
-      <div className={styles.header}>
-        <button type="button" className={styles.back} aria-label="Back" onClick={goToMenu}>
-          <ArrowLeft size={20} aria-hidden="true" />
-        </button>
-        <span className={styles.title}>Settings</span>
+    <div className="absolute inset-0 z-[600] flex flex-col bg-background">
+      <div
+        className="flex items-center gap-2 border-b px-4 pb-2.5"
+        style={{ paddingTop: "calc(10px + var(--nonet-safe-top))" }}
+      >
+        <Button variant="ghost" size="icon" aria-label={t("common.back")} onClick={goToMenu}>
+          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+        </Button>
+        <span className="text-sm font-bold uppercase tracking-wide">{t("settings.title")}</span>
       </div>
 
-      <div className={styles.content}>
-        <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>Theme</h2>
-          <div className={styles.themeGrid}>
-            {BASE_THEMES.map(({ mode, label }) => (
-              <button
-                key={mode}
-                type="button"
-                className={styles.themeOption}
-                data-active={themeMode === mode}
-                onClick={() => selectTheme(mode)}
-              >
-                <span>{label}</span>
-                {themeMode === mode && <Check size={16} aria-hidden="true" />}
+      <div
+        className="flex flex-1 flex-col gap-6 overflow-y-auto px-4 py-4"
+        style={{ paddingBottom: "calc(16px + var(--nonet-safe-bottom))" }}
+      >
+        <section className="flex flex-col gap-2.5">
+          <h2 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{t("settings.theme")}</h2>
+          <div className="grid grid-cols-2 gap-2">
+            {BASE_THEMES.map(({ mode, labelKey }) => (
+              <button key={mode} type="button" className={themeOptionClasses(themeMode === mode, false)} onClick={() => selectTheme(mode)}>
+                <span className="flex-1 text-left">{t(labelKey)}</span>
+                {themeMode === mode && <Check className="h-4 w-4" aria-hidden="true" />}
               </button>
             ))}
             {PREMIUM_THEMES.map((theme) => {
@@ -86,9 +114,7 @@ export function SettingsScreen() {
                 <button
                   key={theme.id}
                   type="button"
-                  className={styles.themeOption}
-                  data-active={themeMode === theme.id}
-                  data-locked={!owned}
+                  className={themeOptionClasses(themeMode === theme.id, !owned)}
                   onClick={() => {
                     if (!owned) {
                       hapticSelection();
@@ -98,27 +124,46 @@ export function SettingsScreen() {
                     selectTheme(theme.id);
                   }}
                 >
-                  <span className={styles.swatch} style={{ background: theme.palette.accent }} aria-hidden="true" />
-                  <span>{theme.title}</span>
-                  {owned ? themeMode === theme.id && <Check size={16} aria-hidden="true" /> : <Lock size={14} aria-hidden="true" />}
+                  <span className="h-4 w-4 shrink-0 rounded-full" style={{ background: theme.palette.accent }} aria-hidden="true" />
+                  <span className="flex-1 text-left">{t(`shop.themeNames.${theme.id}`)}</span>
+                  {owned ? (
+                    themeMode === theme.id && <Check className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
                 </button>
               );
             })}
           </div>
         </section>
 
-        <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>Feedback</h2>
-          <label className={styles.toggleRow}>
-            <span className={styles.toggleLabel}>
-              <Vibrate size={18} aria-hidden="true" />
-              Haptic feedback
+        <section className="flex flex-col gap-2.5">
+          <h2 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{t("settings.language")}</h2>
+          <div className="grid grid-cols-3 gap-2">
+            {LANGUAGES.map(({ mode, labelKey }) => (
+              <button
+                key={mode}
+                type="button"
+                className={themeOptionClasses(languageMode === mode, false)}
+                onClick={() => selectLanguage(mode)}
+              >
+                <span className="flex-1 text-left">{t(labelKey)}</span>
+                {languageMode === mode && <Check className="h-4 w-4" aria-hidden="true" />}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="flex flex-col gap-2.5">
+          <h2 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{t("settings.feedback")}</h2>
+          <label className="flex min-h-12 cursor-pointer items-center justify-between rounded-lg bg-muted px-3.5 py-2.5">
+            <span className="flex items-center gap-2">
+              <Vibrate className="h-[18px] w-[18px]" aria-hidden="true" />
+              {t("settings.haptics")}
             </span>
-            <input
-              type="checkbox"
+            <Switch
               checked={hapticsOn}
-              onChange={(e) => {
-                const next = e.target.checked;
+              onCheckedChange={(next) => {
                 setHapticsOn(next);
                 setHapticsEnabled(next);
                 if (next) hapticSelection(); // immediate confirmation that it's back on
@@ -127,16 +172,15 @@ export function SettingsScreen() {
           </label>
         </section>
 
-        <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>Wallet</h2>
+        <section className="flex flex-col gap-2.5">
+          <h2 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{t("settings.wallet")}</h2>
           {walletAddress ? (
-            <div className={styles.walletRow}>
-              <span className={styles.walletAddress}>
-                <Link2 size={16} aria-hidden="true" /> {formatWalletAddress(walletAddress)}
+            <div className="flex items-center gap-2.5">
+              <span className="inline-flex items-center gap-1.5 text-sm tabular-nums text-muted-foreground">
+                <Link2 className="h-4 w-4" aria-hidden="true" /> {formatWalletAddress(walletAddress)}
               </span>
-              <button
-                type="button"
-                className={styles.walletButton}
+              <Button
+                variant="outline"
                 disabled={walletBusy}
                 onClick={() => {
                   hapticSelection();
@@ -144,13 +188,13 @@ export function SettingsScreen() {
                   void disconnectWallet().finally(() => setWalletBusy(false));
                 }}
               >
-                Disconnect
-              </button>
+                {t("settings.walletDisconnect")}
+              </Button>
             </div>
           ) : (
-            <button
-              type="button"
-              className={styles.walletConnectButton}
+            <Button
+              variant="outline"
+              className="w-full"
               disabled={walletBusy}
               onClick={() => {
                 hapticSelection();
@@ -158,9 +202,9 @@ export function SettingsScreen() {
                 void openWalletConnectModal().finally(() => setWalletBusy(false));
               }}
             >
-              <Link2 size={16} aria-hidden="true" />
-              Connect wallet for future Gram rewards
-            </button>
+              <Link2 className="h-4 w-4" aria-hidden="true" />
+              {t("settings.walletConnect")}
+            </Button>
           )}
         </section>
       </div>

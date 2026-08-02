@@ -1,4 +1,5 @@
 import { useEffect, useState, type RefObject } from "react";
+import { useTranslation } from "react-i18next";
 import type { ClearEvent } from "../store/gameStore.js";
 import styles from "./ComboPopup.module.css";
 
@@ -11,6 +12,7 @@ interface ComboPopupProps {
 
 /** A floating, scaling number near the last placement (§15). */
 export function ComboPopup({ clearEvent, boardRef }: ComboPopupProps) {
+  const { t } = useTranslation();
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -33,8 +35,10 @@ export function ComboPopup({ clearEvent, boardRef }: ComboPopupProps) {
   return (
     <div key={clearEvent.key} className={styles.popup} style={{ transform: `translate(${x}px, ${y}px)` }}>
       <span className={styles.score}>+{clearEvent.turnScore}</span>
-      {clearEvent.comboLevel > 1 && <span className={styles.combo}>combo x{clearEvent.comboLevel}</span>}
-      {clearEvent.isPerfectClear && <span className={styles.combo}>PERFECT CLEAR!</span>}
+      {clearEvent.comboLevel > 1 && (
+        <span className={styles.combo}>{t("scoreHud.combo", { level: clearEvent.comboLevel })}</span>
+      )}
+      {clearEvent.isPerfectClear && <span className={styles.combo}>{t("game.perfectClear")}</span>}
     </div>
   );
 }

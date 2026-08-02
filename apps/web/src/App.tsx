@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Home, Store } from "lucide-react";
 import type { PowerupKind } from "@nonet/shared";
+import { Button } from "@/components/ui/button";
 import { Board } from "./components/Board.js";
 import { ComboPopup } from "./components/ComboPopup.js";
 import { DragLayer } from "./components/DragLayer.js";
@@ -21,6 +23,7 @@ import { hideBackButton, initSettingsButton, showBackButton } from "./telegram/w
 import styles from "./App.module.css";
 
 export function App() {
+  const { t } = useTranslation();
   const boardRef = useRef<HTMLDivElement>(null);
   const bootStatus = useGameStore((s) => s.bootStatus);
   const bootError = useGameStore((s) => s.bootError);
@@ -51,7 +54,7 @@ export function App() {
   if (bootStatus === "loading") {
     return (
       <div className={styles.boot}>
-        <p>Loading NONET…</p>
+        <p>{t("boot.loading")}</p>
       </div>
     );
   }
@@ -59,11 +62,11 @@ export function App() {
   if (bootStatus === "error") {
     return (
       <div className={styles.boot}>
-        <p className={styles.bootError}>Couldn&apos;t start a session.</p>
+        <p className={styles.bootError}>{t("boot.sessionError")}</p>
         <p>{bootError}</p>
-        <button type="button" className={styles.bootRetry} onClick={() => void bootstrap()}>
-          Retry
-        </button>
+        <Button className="text-white" onClick={() => void bootstrap()}>
+          {t("boot.retry")}
+        </Button>
       </div>
     );
   }
@@ -91,13 +94,15 @@ function LeaderboardPage() {
 
 function ShopPage() {
   const sessionToken = useGameStore((s) => s.sessionToken);
+  const inventory = useGameStore((s) => s.inventory);
   const refreshInventory = useGameStore((s) => s.refreshInventory);
   const goToMenu = useGameStore((s) => s.goToMenu);
   if (!sessionToken) return null; // shouldn't happen once bootStatus is "ready"
-  return <ShopOverlay sessionToken={sessionToken} onClose={goToMenu} onPurchased={refreshInventory} />;
+  return <ShopOverlay sessionToken={sessionToken} inventory={inventory} onClose={goToMenu} onPurchased={refreshInventory} />;
 }
 
 function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }) {
+  const { t } = useTranslation();
   const game = useGameStore((s) => s.game);
   const cellFamilies = useGameStore((s) => s.cellFamilies);
   const lastClear = useGameStore((s) => s.lastClear);
@@ -142,7 +147,7 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
       lastTargetingRef.current = targeting;
       setHint(
         targeting.kind === "fill" && targeting.preview.regionTooLarge
-          ? `Region too large (${targeting.preview.regionSize} cells) — pick a smaller pocket`
+          ? t("game.regionTooLarge", { count: targeting.preview.regionSize })
           : null,
       );
       return;
@@ -157,7 +162,7 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
 
   const handleRocketFire = async (orientation: "row" | "col", index: number) => {
     const ok = await applyRocket(orientation, index);
-    if (!ok) setHint("Couldn't fire — out of rockets?");
+    if (!ok) setHint(t("game.rocketOutOfAmmo"));
   };
 
   return (
@@ -180,12 +185,12 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
           />
         </div>
         <div className={styles.controlsArea}>
-          <button type="button" className={styles.shopButton} onClick={goToMenu} aria-label="Back to menu">
-            <Home size={18} aria-hidden="true" />
-          </button>
-          <button type="button" className={styles.shopButton} onClick={() => setShopOpen(true)}>
-            <Store size={16} aria-hidden="true" /> Shop
-          </button>
+          <Button variant="secondary" size="icon" onClick={goToMenu} aria-label={t("game.home")}>
+            <Home className="h-[18px] w-[18px]" aria-hidden="true" />
+          </Button>
+          <Button variant="secondary" size="icon" onClick={() => setShopOpen(true)} aria-label={t("mainMenu.shop")}>
+            <Store className="h-4 w-4" aria-hidden="true" />
+          </Button>
         </div>
       </div>
 
@@ -232,6 +237,7 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
       {shopOpen && sessionToken && (
         <ShopOverlay
           sessionToken={sessionToken}
+          inventory={inventory}
           onClose={() => setShopOpen(false)}
           onPurchased={refreshInventory}
         />

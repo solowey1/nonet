@@ -86,4 +86,21 @@ export const PREMIUM_THEMES: readonly PremiumThemeDef[] = [
       danger: "#ff3860",
     },
   },
+  {
+    id: "monochrome",
+    title: "Monochrome",
+    description: "Black, white, and gray only — unlocked forever",
+    starsAmount: 60,
+    palette: {
+      bg: "#101010",
+      board: "#1c1c1c",
+      cellEmpty: "#282828",
+      cellFilled: "#e0e0e0",
+      blockDivider: "#383838",
+      accent: "#ffffff",
+      text: "#f5f5f5",
+      textDim: "#8f8f8f",
+      danger: "#c7c7c7",
+    },
+  },
 ] as const;

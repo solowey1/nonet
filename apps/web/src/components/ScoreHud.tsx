@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import styles from "./ScoreHud.module.css";
 
 interface ScoreHudProps {
@@ -7,21 +8,22 @@ interface ScoreHudProps {
 }
 
 export function ScoreHud({ score, comboLevel, bestScore }: ScoreHudProps) {
+  const { t } = useTranslation();
   return (
     <div className={styles.hud}>
       <div className={styles.scores}>
         <div>
-          <span className={styles.label}>Score</span>
+          <span className={styles.label}>{t("scoreHud.score")}</span>
           <span className={styles.score}>{score.toLocaleString()}</span>
         </div>
         {bestScore !== null && (
           <div>
-            <span className={styles.label}>Best</span>
+            <span className={styles.label}>{t("scoreHud.best")}</span>
             <span className={styles.bestScore}>{bestScore.toLocaleString()}</span>
           </div>
         )}
       </div>
-      <div className={styles.combo}>{comboLevel > 1 ? `combo x${comboLevel}` : ""}</div>
+      <div className={styles.combo}>{comboLevel > 1 ? t("scoreHud.combo", { level: comboLevel }) : ""}</div>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import { useTranslation } from "react-i18next";
 import { BOARD_SIZE } from "@nonet/engine";
 import { POWERUP_ICON } from "../utils/powerupIcon.js";
 import styles from "./RocketGutters.module.css";
@@ -16,6 +17,7 @@ interface RocketGuttersProps {
 
 /** 36 gutter slots around the board — 9 per side (§7): tap a side slot to fire that row/column. */
 export function RocketGutters({ boardRef, visible, onFire }: RocketGuttersProps) {
+  const { t } = useTranslation();
   if (!visible) return null;
   const rect = boardRef.current?.getBoundingClientRect();
   if (!rect) return null;
@@ -69,7 +71,7 @@ export function RocketGutters({ boardRef, visible, onFire }: RocketGuttersProps)
           className={styles.slot}
           style={{ transform: `translate(${slot.x}px, ${slot.y}px)`, width: slot.w, height: slot.h }}
           onClick={slot.fire}
-          aria-label="fire rocket"
+          aria-label={t("inventory.rocket")}
         >
           <RocketIcon aria-hidden="true" size={14} />
         </button>
