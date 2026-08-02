@@ -32,17 +32,37 @@ interface CloudStorage {
   getItem(key: string, callback: (err: string | null, value?: string) => void): void;
 }
 
+/** In px, relative to the viewport edge — see applySafeAreaInsets' doc comment for how the two inset types combine. */
+interface SafeAreaInset {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+type TelegramEventType =
+  | "themeChanged"
+  | "safeAreaChanged"
+  | "contentSafeAreaChanged"
+  | "fullscreenChanged"
+  | "fullscreenFailed";
+
 interface TelegramWebApp {
   initData: string;
   themeParams: ThemeParams;
   colorScheme: "light" | "dark";
+  isFullscreen?: boolean;
+  safeAreaInset?: SafeAreaInset;
+  contentSafeAreaInset?: SafeAreaInset;
   ready(): void;
   expand(): void;
   disableVerticalSwipes?(): void;
   enableClosingConfirmation?(): void;
   disableClosingConfirmation?(): void;
+  requestFullscreen?(): void;
+  exitFullscreen?(): void;
   openInvoice?(url: string, callback: (status: InvoiceStatus) => void): void;
-  onEvent?(eventType: "themeChanged", callback: () => void): void;
+  onEvent?(eventType: TelegramEventType, callback: () => void): void;
   HapticFeedback?: HapticFeedback;
   CloudStorage?: CloudStorage;
   openTelegramLink?(url: string): void;
@@ -70,6 +90,8 @@ export function bootstrapTelegramWebApp(): void {
   webApp.expand();
   webApp.disableVerticalSwipes?.();
   syncTelegramTheme();
+  syncSafeAreaInsets();
+  requestFullscreenIfNeeded();
   void loadHapticsPreference();
 }
 
@@ -103,6 +125,58 @@ function syncTelegramTheme(): void {
   if (!webApp) return;
   applyThemeParams();
   webApp.onEvent?.("themeChanged", applyThemeParams);
+}
+
+/**
+ * Telegram exposes two separate insets: `safeAreaInset` is the OS-level
+ * obstruction (notch, home indicator, status bar) — only really non-zero
+ * once the app is running fullscreen, since otherwise Telegram's own chrome
+ * already sits above the WebView. `contentSafeAreaInset` is Telegram's *own*
+ * UI drawn on top of that (header bar, back/close/settings controls) that
+ * page content additionally needs to clear. The two stack — content needs
+ * to clear both, not just the larger of the two — so each edge's usable
+ * inset is their sum. Exposed as CSS vars in px (not `env()`, since these
+ * numbers come from Telegram, not the browser) for `theme.css` to consume;
+ * falls back to 0 on every edge outside Telegram or on older clients that
+ * predate this API (Bot API 8.0), which is exactly the right fallback since
+ * `env(safe-area-inset-*)` already covers the plain-browser/notch case.
+ */
+function applySafeAreaInsets(): void {
+  const webApp = getWebApp();
+  if (!webApp) return;
+  const root = document.documentElement.style;
+  const safe = webApp.safeAreaInset ?? { top: 0, bottom: 0, left: 0, right: 0 };
+  const content = webApp.contentSafeAreaInset ?? { top: 0, bottom: 0, left: 0, right: 0 };
+  root.setProperty("--tg-inset-top", `${safe.top + content.top}px`);
+  root.setProperty("--tg-inset-bottom", `${safe.bottom + content.bottom}px`);
+  root.setProperty("--tg-inset-left", `${safe.left + content.left}px`);
+  root.setProperty("--tg-inset-right", `${safe.right + content.right}px`);
+}
+
+function syncSafeAreaInsets(): void {
+  const webApp = getWebApp();
+  if (!webApp) return;
+  applySafeAreaInsets();
+  webApp.onEvent?.("safeAreaChanged", applySafeAreaInsets);
+  webApp.onEvent?.("contentSafeAreaChanged", applySafeAreaInsets);
+  // Entering/leaving fullscreen changes both insets (see the doc comment
+  // above) — re-sync rather than assume a specific direction of change.
+  webApp.onEvent?.("fullscreenChanged", applySafeAreaInsets);
+  webApp.onEvent?.("fullscreenFailed", applySafeAreaInsets);
+}
+
+/**
+ * Launch straight into fullscreen (Bot API 8.0+) rather than waiting for the
+ * player to find a toggle for it. Feature-detected and a no-op wherever
+ * unsupported — older Telegram clients, or already-fullscreen (e.g. a hot
+ * reload) — `requestFullscreen` itself is fire-and-forget; the resulting
+ * state change (or failure) arrives via the `fullscreenChanged` /
+ * `fullscreenFailed` events already wired above.
+ */
+function requestFullscreenIfNeeded(): void {
+  const webApp = getWebApp();
+  if (!webApp || webApp.isFullscreen || typeof webApp.requestFullscreen !== "function") return;
+  webApp.requestFullscreen();
 }
 
 export function setClosingConfirmation(enabled: boolean): void {

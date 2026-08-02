@@ -834,3 +834,100 @@ calls `openTelegramLink` with a correctly-encoded
 `t.me/share/url?...&text=I%20scored%204%2C242%20in%20NONET!...` string.
 113 engine tests, 51 API tests, `tsc --noEmit`, and `vite build` all still
 pass/succeed after these changes.
+
+# Pre-Phase-7 addendum: fullscreen, safe areas, and a landscape layout
+
+Requested before moving on to §19 step 7 (Gram/TON stubs): launch straight
+into fullscreen, respect Telegram's `safeAreaInset`/`contentSafeAreaInset`,
+and add a landscape layout (board centered, score+hints on the left,
+controls+hand tray on the right).
+
+## Could not verify Telegram's own docs live — implemented from trained knowledge, defensively
+
+Both linked doc pages (`core.telegram.org/bots/webapps#...`) 403'd through
+this sandbox's egress proxy — confirmed via the proxy's own status endpoint
+as a policy denial on `core.telegram.org`, not a transient failure, so no
+retry or workaround was attempted (per the proxy's own guidance). Every new
+field/method (`isFullscreen`, `requestFullscreen`, `exitFullscreen`,
+`safeAreaInset`, `contentSafeAreaInset`, the `safeAreaChanged` /
+`contentSafeAreaChanged` / `fullscreenChanged` / `fullscreenFailed` events)
+is written from Bot API 8.0 knowledge, but feature-detected the same way
+every other WebApp API surface in this file already is (`webApp.method?.()`,
+`webApp.field ?? fallback`) — a wrong field name or an older client without
+this API resolves to the same safe fallback (0 insets, no fullscreen
+request attempted) rather than throwing. Flagged to the user directly
+rather than silently presenting it as doc-verified.
+
+## `safeAreaInset` and `contentSafeAreaInset` are summed, not maxed, per edge
+
+They're two independently-obstructing things stacked on the same edge, not
+two measurements of the same one: `safeAreaInset` is the OS-level
+obstruction (notch, home indicator) that only really matters once running
+fullscreen; `contentSafeAreaInset` is Telegram's *own* chrome (header bar,
+back/close/settings controls) drawn on top of that. Content needs to clear
+both, so each edge's usable inset is `safeAreaInset[edge] +
+contentSafeAreaInset[edge]`, exposed as one combined `--tg-inset-*` custom
+property per edge. Where this combined value meets the browser's own
+`env(safe-area-inset-*)` (which already covers the non-Telegram/plain-notch
+case), the two *are* maxed against each other (`--nonet-safe-*`) — those
+are alternate sources for the same single obstruction, not two stacked
+ones.
+
+## Centralized into four `--nonet-safe-*` vars, replacing four components' local `env()` calls
+
+`ScoreHud`, `LeaderboardScreen`, `ShopOverlay`, and `HandTray` each computed
+their own `calc(10px + env(safe-area-inset-top, 0px))` independently. Since
+"content must stay inside `contentSafeAreaInset`" is now a real constraint
+(not just a nice-to-have `env()` fallback for a phone notch), centralizing
+the combined value in `theme.css` means every consumer gets Telegram's own
+insets too without each one needing to know `--tg-inset-*` exists.
+
+## Landscape: `display: contents` splits one row into two independent grid items, without duplicating either
+
+The hardest part of "board centered, score+hints left, controls+tray
+right" is that `hudRow` (score + the Home/Shop buttons) is one visual row
+in portrait but needs its two halves on *opposite sides* of the screen in
+landscape — genuinely different relationships, not just repositioned as a
+unit. Rather than render two separate JSX trees (which would double-mount
+`Board`/`HandTray`/etc., breaking their single `boardRef` and drag-session
+state), `.hudRow` becomes `display: contents` under `@media (orientation:
+landscape)`: it stops generating its own box, so its two children (a
+`scoreArea` div and a `controlsArea` div) become direct grid items of
+`.app`'s grid instead of flex children of `hudRow` — placeable via
+`grid-area` on opposite sides of a 3-column `grid-template-areas` layout
+(`score board controls` / `hint board inventory` / `hint board tray`,
+`board` spanning all 3 rows so it centers vertically across the full
+height) without a single component being mounted twice. Portrait keeps
+`hudRow`'s original `display: flex` — same DOM, same components, just a
+different CSS relationship between the exact same nodes.
+
+## HandTray's jump-prevention fix (see the earlier "board jumped" entry) needed a second axis
+
+That fix reserved tray *height* so a row of pieces couldn't reflow the
+board vertically. Landscape's right column stacks the 3 pieces
+*vertically* instead (a horizontal row of up to 5-cell-wide pieces doesn't
+fit a ~150px-wide column) — which flips which axis varies per hand: now
+it's *width*, not height, that needs reserving to avoid the same class of
+jump recurring sideways. Rather than duplicate the "reserve the tallest
+possible piece" computation, the already-computed pixel value is exposed
+as one CSS custom property (`--nonet-tray-reserve`) alongside the existing
+`minHeight`, and `HandTray.module.css`'s landscape rule reads it as
+`min-width` — one JS computation, one CSS variable, consumed as whichever
+dimension actually matters per orientation.
+
+## Verified geometrically, not just visually, against a mocked WebApp SDK
+
+Headless Chromium at a landscape (780x400) viewport with a mocked
+`Telegram.WebApp` confirmed: `requestFullscreen` is actually called;
+`--tg-inset-top` computes to exactly `safeAreaInset.top +
+contentSafeAreaInset.top`; and — read directly via
+`getBoundingClientRect()`, not eyeballed from a screenshot — the board is
+genuinely horizontally centered in the viewport, score sits at the
+top-left, controls at the top-right (same row as score), and
+inventory/tray stack below controls on the right, exactly matching the
+requested layout. Re-ran the existing 30-real-placement board-stability
+check (from the earlier "board jumped" fix) in landscape specifically and
+confirmed the board's position and size still never moves by a pixel
+across many hand changes; a separate portrait-viewport screenshot confirms
+no visual regression there. 113 engine tests, 51 API tests, `tsc --noEmit`,
+and `vite build` all still pass/succeed.

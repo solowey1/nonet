@@ -21,7 +21,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px;
+  padding: calc(10px + var(--nonet-safe-top)) 16px 10px;
   border-bottom: 1px solid color-mix(in srgb, var(--nonet-text) 12%, transparent);
 }
 

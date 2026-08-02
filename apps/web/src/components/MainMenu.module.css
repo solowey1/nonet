@@ -5,7 +5,8 @@
   align-items: center;
   justify-content: center;
   gap: 14px;
-  padding: 24px;
+  padding: calc(24px + var(--nonet-safe-top)) calc(24px + var(--nonet-safe-right)) calc(24px + var(--nonet-safe-bottom))
+    calc(24px + var(--nonet-safe-left));
   max-width: 480px;
   margin: 0 auto;
   position: relative;

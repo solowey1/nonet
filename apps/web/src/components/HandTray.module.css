@@ -3,7 +3,7 @@
   justify-content: center;
   align-items: center;
   gap: clamp(8px, 4vw, 24px);
-  padding: 12px 8px calc(12px + env(safe-area-inset-bottom, 0px));
+  padding: 12px 8px calc(12px + var(--nonet-safe-bottom));
 }
 
 .slot {
@@ -28,4 +28,19 @@
 
 .slot:not([data-dragging="true"]):not([data-empty="true"]):active {
   transform: scale(1.05);
+}
+
+/* Landscape: stack the 3 pieces vertically down the right column instead of
+   in a row — a row of 3 (up to 5-cell-wide) pieces doesn't fit the narrow
+   column width the landscape layout gives it (see App.module.css). */
+@media (orientation: landscape) {
+  .tray {
+    flex-direction: column;
+    justify-content: center;
+    min-width: var(--nonet-tray-reserve, 132px);
+    min-height: 0;
+    height: 100%;
+    padding: 4px 8px calc(8px + var(--nonet-safe-bottom));
+    gap: clamp(4px, 2vh, 16px);
+  }
 }

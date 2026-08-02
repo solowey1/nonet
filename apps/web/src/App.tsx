@@ -117,22 +117,37 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
 
   return (
     <div className={styles.app}>
+      {/*
+        `.hudRow` groups score+controls into one visual row in portrait, but
+        `display: contents` in landscape (see App.module.css) makes it
+        transparent to the grid — its two children below become independently
+        placeable grid items (score left, controls right), matching the
+        requested layout without duplicating either subtree.
+      */}
       <div className={styles.hudRow}>
-        <ScoreHud
-          score={game.score}
-          comboLevel={game.comboLevel}
-          bestScore={
-            profile?.bestRun ? Math.max(profile.bestRun.score, game.score) : game.score > 0 ? game.score : null
-          }
-        />
-        <button type="button" className={styles.shopButton} onClick={goToMenu} aria-label="Back to menu">
-          🏠
-        </button>
-        <button type="button" className={styles.shopButton} onClick={() => setShopOpen(true)}>
-          🛍 Shop
-        </button>
+        <div className={styles.scoreArea}>
+          <ScoreHud
+            score={game.score}
+            comboLevel={game.comboLevel}
+            bestScore={
+              profile?.bestRun ? Math.max(profile.bestRun.score, game.score) : game.score > 0 ? game.score : null
+            }
+          />
+        </div>
+        <div className={styles.controlsArea}>
+          <button type="button" className={styles.shopButton} onClick={goToMenu} aria-label="Back to menu">
+            🏠
+          </button>
+          <button type="button" className={styles.shopButton} onClick={() => setShopOpen(true)}>
+            🛍 Shop
+          </button>
+        </div>
       </div>
-      <InventoryBar inventory={inventory} armed={armedPowerup} onArm={armPowerup} />
+
+      <div className={styles.inventoryArea}>
+        <InventoryBar inventory={inventory} armed={armedPowerup} onArm={armPowerup} />
+      </div>
+
       <div className={styles.hint}>{hint}</div>
 
       <div className={styles.boardWrap}>

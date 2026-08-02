@@ -2,7 +2,7 @@
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 6px;
+  padding: calc(10px + var(--nonet-safe-top)) 16px 6px;
 }
 
 .scores {

@@ -27,6 +27,21 @@
   --nonet-piece-4: #a78bfa; /* 4 cells */
   --nonet-piece-5: #ff7eb6; /* 5+ cells */
 
+  /*
+   * Content must stay inside Telegram's contentSafeAreaInset (§12). Combines
+   * two independent sources per edge: the plain-web `env(safe-area-inset-*)`
+   * (an iOS notch/home-indicator, works even outside Telegram) and
+   * `--tg-inset-*` (set from JS in webapp.ts — Telegram's own
+   * safeAreaInset + contentSafeAreaInset summed; see applySafeAreaInsets'
+   * doc comment for why they're summed rather than maxed). The two are
+   * maxed against each other since they're two different potential
+   * obstructions on the same edge, not additive amounts.
+   */
+  --nonet-safe-top: max(env(safe-area-inset-top, 0px), var(--tg-inset-top, 0px));
+  --nonet-safe-right: max(env(safe-area-inset-right, 0px), var(--tg-inset-right, 0px));
+  --nonet-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-inset-bottom, 0px));
+  --nonet-safe-left: max(env(safe-area-inset-left, 0px), var(--tg-inset-left, 0px));
+
   color-scheme: dark light;
 }
 
