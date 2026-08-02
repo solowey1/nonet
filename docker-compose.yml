@@ -2,31 +2,35 @@ name: nonet
 
 services:
   # The game itself — nginx serving the built SPA, and routing /api/ and
-  # /tg/webhook to the other two services (§18). Named to match the repo.
-  web:
-    container_name: Nonet
+  # /tg/webhook to the other two services (§18).
+  #
+  # Service names carry the nonet- prefix because in production these
+  # containers share one Docker network with other projects — bare `api`
+  # and `bot` would collide. nginx.conf resolves them by these names.
+  nonet-web:
+    container_name: nonet
     build:
       context: .
       dockerfile: docker/web.Dockerfile
     ports:
       - "${WEB_PORT:-8080}:80"
     depends_on:
-      api:
+      nonet-api:
         condition: service_healthy
-      bot:
+      nonet-bot:
         condition: service_healthy
     restart: unless-stopped
 
-  api:
+  nonet-api:
     container_name: nonet-api
     build:
       context: .
       dockerfile: docker/api.Dockerfile
     env_file: .env
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-nonet}:${POSTGRES_PASSWORD:-nonet}@postgres:5432/${POSTGRES_DB:-nonet}
+      DATABASE_URL: postgres://${POSTGRES_USER:-nonet}:${POSTGRES_PASSWORD:-nonet}@nonet-postgres:5432/${POSTGRES_DB:-nonet}
     depends_on:
-      postgres:
+      nonet-postgres:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -36,7 +40,7 @@ services:
       retries: 5
       start_period: 10s
 
-  bot:
+  nonet-bot:
     container_name: nonet-bot
     build:
       context: .
@@ -50,7 +54,7 @@ services:
       retries: 5
       start_period: 10s
 
-  postgres:
+  nonet-postgres:
     container_name: nonet-postgres
     image: postgres:16-alpine
     environment:

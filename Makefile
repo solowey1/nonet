@@ -3,14 +3,14 @@
 # Start Postgres in the background, then every app's dev server in parallel
 # (Vite for the web SPA, tsx watch for the api and bot). Ctrl-C stops the lot.
 dev:
-	docker compose up -d postgres
+	docker compose up -d nonet-postgres
 	pnpm -r --parallel --filter @nonet/web --filter @nonet/api --filter @nonet/bot run dev
 
 # Engine + api's integration suite needs a real Postgres — this brings one
 # up if it isn't already running. Point DATABASE_URL elsewhere first if you'd
 # rather test against something else.
 test:
-	docker compose up -d postgres
+	docker compose up -d nonet-postgres
 	pnpm -r --if-present run test
 
 migrate:
