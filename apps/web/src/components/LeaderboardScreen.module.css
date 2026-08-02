@@ -158,3 +158,15 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+
+.shareButton {
+  min-height: 44px;
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: var(--nonet-radius);
+  border: 1px solid color-mix(in srgb, var(--nonet-accent) 40%, transparent);
+  background: transparent;
+  color: var(--nonet-accent);
+  font-size: 0.9rem;
+  cursor: pointer;
+}

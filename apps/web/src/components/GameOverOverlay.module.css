@@ -99,3 +99,19 @@
 .revive:active {
   transform: scale(0.97);
 }
+
+.share {
+  min-height: 36px;
+  margin-top: 4px;
+  padding: 6px 14px;
+  border-radius: var(--nonet-radius);
+  border: none;
+  background: transparent;
+  color: var(--nonet-text-dim);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.share:active {
+  transform: scale(0.97);
+}

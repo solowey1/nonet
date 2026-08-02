@@ -1,6 +1,7 @@
 import { useCallback, useState, type RefObject } from "react";
 import { canPlace, detectFullUnits, placePiece, unitsMask } from "@nonet/engine";
 import { useGameStore } from "../store/gameStore.js";
+import { hapticNotification } from "../telegram/webapp.js";
 import { BOARD_SIZE, clamp, pointToFractionalCell } from "../utils/geometry.js";
 import type { DragState, GhostPreview } from "../types.js";
 
@@ -63,6 +64,8 @@ export function useDragPlacement(boardRef: RefObject<HTMLDivElement | null>) {
         const ghost = computeGhost(event.clientX, event.clientY);
         if (ghost?.legal) {
           useGameStore.getState().place(slot, ghost.row, ghost.col);
+        } else {
+          hapticNotification("error");
         }
         setDrag(null);
       }

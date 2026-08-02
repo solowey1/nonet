@@ -24,7 +24,14 @@ import {
   postShopInvoice,
   sendCheckpointBeacon,
 } from "../api/client.js";
-import { bootstrapTelegramWebApp, getTelegramInitData, openInvoice, setClosingConfirmation } from "../telegram/webapp.js";
+import {
+  bootstrapTelegramWebApp,
+  getTelegramInitData,
+  hapticImpact,
+  hapticNotification,
+  openInvoice,
+  setClosingConfirmation,
+} from "../telegram/webapp.js";
 import { maskToCells } from "../utils/bitmask.js";
 import { getOrCreateDevUserId } from "../utils/devUser.js";
 import { hexToBytes } from "../utils/hex.js";
@@ -241,6 +248,11 @@ export const useGameStore = create<GameStoreState>((set, get) => {
           : null,
     });
 
+    if (next.status === "gameover") hapticNotification("error");
+    else if (isPerfectClear) hapticNotification("success");
+    else if (clearedMask !== 0n) hapticImpact("medium");
+    else hapticImpact("light");
+
     void maybeCheckpoint(nextActionLog);
     return true;
   }
@@ -375,6 +387,14 @@ export const useGameStore = create<GameStoreState>((set, get) => {
             : null,
       });
 
+      // §12 haptics: scale with what actually happened this turn, so a plain
+      // placement, a line clear, a perfect clear, and running out of moves
+      // each have a distinctly different feel rather than one generic buzz.
+      if (next.status === "gameover") hapticNotification("error");
+      else if (isPerfectClear) hapticNotification("success");
+      else if (preview.unitsCleared > 0) hapticImpact("medium");
+      else hapticImpact("light");
+
       void maybeCheckpoint(nextActionLog);
       return true;
     },
@@ -459,6 +479,7 @@ export const useGameStore = create<GameStoreState>((set, get) => {
           finishResult: null,
         });
         setClosingConfirmation(true);
+        hapticNotification("success");
         void maybeCheckpoint(nextActionLog);
         return "purchased";
       } finally {

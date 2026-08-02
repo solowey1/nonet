@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { LeaderboardResponse, ProfileResponse } from "@nonet/shared";
 import { getLeaderboard } from "../api/client.js";
+import { hapticSelection, shareViaTelegram } from "../telegram/webapp.js";
 import styles from "./LeaderboardScreen.module.css";
 
 type Scope = "daily" | "weekly" | "all_time";
@@ -46,11 +47,22 @@ export function LeaderboardScreen({ sessionToken, profile, onClose }: Leaderboar
             type="button"
             className={styles.tab}
             data-active={tab === "leaderboard"}
-            onClick={() => setTab("leaderboard")}
+            onClick={() => {
+              hapticSelection();
+              setTab("leaderboard");
+            }}
           >
             Leaderboard
           </button>
-          <button type="button" className={styles.tab} data-active={tab === "mine"} onClick={() => setTab("mine")}>
+          <button
+            type="button"
+            className={styles.tab}
+            data-active={tab === "mine"}
+            onClick={() => {
+              hapticSelection();
+              setTab("mine");
+            }}
+          >
             My Stats
           </button>
         </div>
@@ -69,7 +81,10 @@ export function LeaderboardScreen({ sessionToken, profile, onClose }: Leaderboar
                   type="button"
                   className={styles.scopeButton}
                   data-active={scope === s}
-                  onClick={() => setScope(s)}
+                  onClick={() => {
+                    hapticSelection();
+                    setScope(s);
+                  }}
                 >
                   {SCOPE_LABEL[s]}
                 </button>
@@ -129,6 +144,20 @@ export function LeaderboardScreen({ sessionToken, profile, onClose }: Leaderboar
                 <span>Daily streak</span>
                 <span className={styles.statValue}>{profile.streak} 🔥</span>
               </div>
+              {profile.bestRun && (
+                <button
+                  type="button"
+                  className={styles.shareButton}
+                  onClick={() => {
+                    hapticSelection();
+                    shareViaTelegram(
+                      `My best score in NONET is ${profile.bestRun?.score.toLocaleString()}! Can you beat it? 🧩`,
+                    );
+                  }}
+                >
+                  📤 Share my best score
+                </button>
+              )}
             </>
           )}
         </div>

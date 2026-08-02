@@ -109,3 +109,13 @@
   font-size: 0.9rem;
   cursor: pointer;
 }
+
+.settingsToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  color: var(--nonet-text-dim);
+  font-size: 0.85rem;
+  cursor: pointer;
+}

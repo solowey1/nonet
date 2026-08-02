@@ -755,3 +755,82 @@ the *same* score, entirely from client-side state with no network round
 trip. 113 engine tests (111 + 2 new) and 51 API tests (48 + 3 new, covering
 the profile streak fix) all pass; both `tsc --noEmit` and `vite build`
 stay clean across every workspace package.
+
+# Phase 6: polish (§12's deferred checklist — theme params, haptics, CloudStorage, share cards)
+
+`telegram/webapp.ts` named these four items as explicitly deferred back in
+Phase 2. All four are wired now; none needed a server-side change — they're
+all client-side Telegram WebApp SDK surface.
+
+## Theme params override a deliberately small subset of CSS variables, as inline styles
+
+Real `WebApp.themeParams` + `colorScheme` now drive `--nonet-bg`,
+`--nonet-board`, `--nonet-cell-empty`, `--nonet-text`, `--nonet-text-dim`,
+`--nonet-accent` (from `button_color`), and `--nonet-danger` — set as
+inline styles on `<html>` via `applyThemeParams()`, re-run on Telegram's
+`themeChanged` event. Deliberately *not* touched: the five `--nonet-piece-*`
+colours, radius, and shadow — those are the game's own visual identity
+(§15), not something that should shift with the user's Telegram theme the
+way chrome/background colours reasonably should. Inline styles on `<html>`
+always beat `theme.css`'s `:root { ... }` rule for the same element
+regardless of specificity, so this layers cleanly over — rather than
+replaces — the existing `prefers-color-scheme` fallback that plain-browser
+dev/testing still relies on (no real `Telegram.WebApp` object there, so
+`applyThemeParams` no-ops and the CSS fallback alone applies).
+
+## Haptics are scaled to what actually happened, not a single generic buzz
+
+`hapticImpact("light")` for a plain placement, `hapticImpact("medium")` for
+any clear, `hapticNotification("success")` for a perfect clear,
+`hapticNotification("error")` for both an illegal drop and reaching game
+over, `hapticNotification("success")` for a completed revive purchase, and
+`hapticSelection()` for menu/tab navigation. All gated behind a single
+`hapticsEnabled` module flag (default on) so every call site stays a
+one-liner regardless of the user's preference — see below.
+
+## Haptics preference is real user-facing state, backed by CloudStorage, not a platform on/off switch
+
+Telegram's own haptics either exist on a client or they don't — nothing to
+toggle there. The toggle is ours: a `hapticsEnabled` preference synced via
+`WebApp.CloudStorage` (a small per-user key-value store that follows the
+user across their devices), with a `localStorage` fallback outside
+Telegram so the toggle still persists locally during dev/testing rather
+than silently doing nothing. Loaded once, fire-and-forget, during
+`bootstrapTelegramWebApp()` — by the time the main menu can actually render
+(after the session/profile round trip completes), the single CloudStorage
+read has essentially always already resolved, so no loading state was
+built for it.
+
+## Share cards use `t.me/share/url`, not inline-mode
+
+Telegram Mini Apps have a few ways to let a player share something: bot
+inline-mode query results, `shareToStory`, or a plain
+`t.me/share/url?url=...&text=...` deep link opened via
+`WebApp.openTelegramLink`. The first needs bot-side inline-mode
+configuration in BotFather; the Mini App has no server-rendered "story"
+asset to share. `t.me/share/url` needs neither — it opens Telegram's native
+"choose a chat" sheet with pre-filled text, working with any bot as-is.
+Shared text links back to the Mini App's own `window.location.origin`
+rather than a hardcoded bot deep link — no `BOT_USERNAME` config was added
+for this, since the app's own origin is already exactly the right thing to
+share and requires zero extra plumbing. Available from both the game-over
+screen (share the run's score) and the "My Stats" tab (share the
+all-time best).
+
+## Verified without a real Telegram client, by mocking the WebApp SDK
+
+None of this is testable through `ALLOW_DEV_SESSION`'s plain-browser dev
+path the way earlier phases' manual passes were — there's no real
+`window.Telegram.WebApp` there at all. Instead, drove headless Chromium
+with a `page.addInitScript`-injected mock `Telegram.WebApp` (themeParams,
+`HapticFeedback`, `CloudStorage`, `openTelegramLink`, all instrumented to
+record calls) and confirmed, end to end rather than by reading the code:
+the mocked theme's colours actually land on `<html>`'s inline style and
+visibly repaint the whole UI; a real placement fires exactly one
+`impactOccurred("light")` call; toggling haptics off in the menu writes
+`"false"` to the mocked CloudStorage *and* silences every subsequent
+haptic call (not just cosmetically unchecking a box); and the share button
+calls `openTelegramLink` with a correctly-encoded
+`t.me/share/url?...&text=I%20scored%204%2C242%20in%20NONET!...` string.
+113 engine tests, 51 API tests, `tsc --noEmit`, and `vite build` all still
+pass/succeed after these changes.
