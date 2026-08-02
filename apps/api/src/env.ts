@@ -22,6 +22,10 @@ const envSchema = z.object({
   // opt-in (not just NODE_ENV) so it can never be live by accident; see
   // DECISIONS.md.
   ALLOW_DEV_SESSION: z.coerce.boolean().default(false),
+  // Shared secret the bot service presents (as a header) when forwarding a
+  // paid Stars payment. nginx denies /api/internal/* at the edge (see
+  // docker/nginx/nginx.conf) so this is defense in depth, not the only guard.
+  INTERNAL_API_SECRET: z.string().min(16),
 });
 
 export type Env = z.infer<typeof envSchema>;

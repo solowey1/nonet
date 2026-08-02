@@ -184,3 +184,46 @@ describe("reduce: powerups", () => {
     expect(after.perfectClears).toBe(0);
   });
 });
+
+describe("reduce: revive", () => {
+  it("throws if the run isn't actually over", () => {
+    const state = createInitialState(seed(20));
+    expect(state.status).toBe("playing");
+    expect(() => reduce(state, { t: 0, type: "revive" })).toThrow("revive is only usable after game over");
+  });
+
+  it("clears the board, resets combo, returns to playing, and preserves score", () => {
+    let board = EMPTY_BOARD;
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        if (c !== 4) board |= cellBit(r, c);
+      }
+    }
+    const i2h = getPiece("I2H");
+    const stuck: GameState = {
+      board,
+      hand: [i2h, null, null],
+      rng: createInitialState(seed(21)).rng,
+      score: 1234,
+      comboLevel: 5,
+      piecesPlaced: 10,
+      unitsCleared: 3,
+      maxComboLevel: 5,
+      perfectClears: 1,
+      powerupsUsed: 2,
+      status: "gameover",
+    };
+    expect(isGameOver(stuck.board, stuck.hand)).toBe(true);
+
+    const revived = reduce(stuck, { t: 0, type: "revive" });
+    expect(revived.status).toBe("playing");
+    expect(revived.board).toBe(EMPTY_BOARD);
+    expect(revived.comboLevel).toBe(0);
+    // Untouched: score/stats are the player's, and revive isn't a power-up.
+    expect(revived.score).toBe(1234);
+    expect(revived.piecesPlaced).toBe(10);
+    expect(revived.perfectClears).toBe(1);
+    expect(revived.powerupsUsed).toBe(2);
+    expect(isGameOver(revived.board, revived.hand)).toBe(false);
+  });
+});

@@ -75,6 +75,16 @@ const fillActionSchema = z.object({
   consumeToken: z.string(),
 });
 
+// consumeToken here is the *paid* `purchases` row's id — proof this revive
+// was actually bought, checked the same way a power-up's consumeToken proves
+// it was actually consumed from inventory (§9's principle, extended to §8's
+// revive SKU rather than the five power-up items).
+const reviveActionSchema = z.object({
+  t: z.number().int().nonnegative(),
+  type: z.literal("revive"),
+  consumeToken: z.string(),
+});
+
 export const actionSchema = z.union([
   placeActionSchema,
   pencilActionSchema,
@@ -82,6 +92,7 @@ export const actionSchema = z.union([
   rocketActionSchema,
   bombActionSchema,
   fillActionSchema,
+  reviveActionSchema,
 ]);
 
 export const actionLogSchema = z.array(actionSchema).max(5000);
@@ -110,11 +121,18 @@ export const activeRunSchema = z.object({
   runToken: z.string(),
 });
 
+export const dailyGiftSchema = z.object({
+  granted: z.boolean(),
+  items: z.array(powerupKindSchema),
+  streak: z.number().int().nonnegative(),
+});
+
 export const sessionResponseSchema = z.object({
   token: z.string(),
   user: userSchema,
   inventory: z.record(z.string(), z.number().int().nonnegative()),
   activeRun: activeRunSchema.nullable(),
+  dailyGift: dailyGiftSchema,
 });
 
 // --- POST /api/run/start ---
@@ -146,8 +164,28 @@ export const runFinishRequestSchema = z.object({
 export const runFinishResponseSchema = z.object({
   score: z.number().int().nonnegative(),
   verified: z.boolean(),
-  drops: z.array(z.string()),
+  // Every milestone drop earned during the run (§8) — informational, for the
+  // game-over screen; items were already granted at milestone time, not here.
+  drops: z.array(powerupKindSchema),
   rank: z.number().int().positive().nullable(),
+});
+
+// --- POST /api/run/milestone ---
+
+export const dropItemSchema = z.union([powerupKindSchema, z.literal("nothing")]);
+
+export const runMilestoneRequestSchema = z.object({
+  runId: z.string().uuid(),
+  // Which 1000-point milestone this is (1 = first crossing, 2 = second, ...) —
+  // the server independently re-derives the score from `actions` via replay,
+  // this is just which roll is being requested so a repeat call is idempotent.
+  milestone: z.number().int().positive(),
+  actions: actionLogSchema,
+});
+
+export const runMilestoneResponseSchema = z.object({
+  drop: dropItemSchema,
+  remaining: z.number().int().nonnegative(),
 });
 
 // --- POST /api/session/dev (non-production only — see DECISIONS.md) ---
@@ -167,6 +205,36 @@ export const inventoryConsumeRequestSchema = z.object({
 export const inventoryConsumeResponseSchema = z.object({
   consumeToken: z.string(),
   remaining: z.number().int().nonnegative(),
+});
+
+// --- GET /api/shop, POST /api/shop/invoice ---
+
+export const skuSchema = z.object({
+  sku: z.string(),
+  title: z.string(),
+  description: z.string(),
+  starsAmount: z.number().int().positive(),
+  // e.g. { pencil: 5 } for pencil_5, or {} for revive (revive isn't an
+  // inventory item — it directly re-opens a run; see the invoice handler).
+  contents: z.record(z.string(), z.number().int().positive()),
+});
+
+export const shopResponseSchema = z.object({
+  skus: z.array(skuSchema),
+});
+
+export const shopInvoiceRequestSchema = z.object({
+  sku: z.string(),
+  // Required only for the 'revive' SKU — which dead run this revive is for.
+  runId: z.string().uuid().optional(),
+});
+
+export const shopInvoiceResponseSchema = z.object({
+  invoiceLink: z.string(),
+  // Held by the client so that, once WebApp.openInvoice reports status==='paid'
+  // (§13, optimistic — the webhook stays the source of truth), it can build
+  // the matching 'revive' action locally with this as its consumeToken.
+  purchaseId: z.string().uuid(),
 });
 
 // --- GET /api/leaderboard ---
@@ -217,12 +285,20 @@ export type InventoryConsumeResponse = z.infer<typeof inventoryConsumeResponseSc
 export type SessionRequest = z.infer<typeof sessionRequestSchema>;
 export type DevSessionRequest = z.infer<typeof devSessionRequestSchema>;
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
+export type DailyGift = z.infer<typeof dailyGiftSchema>;
 export type ActiveRun = z.infer<typeof activeRunSchema>;
 export type User = z.infer<typeof userSchema>;
 export type RunStartResponse = z.infer<typeof runStartResponseSchema>;
 export type RunCheckpointRequest = z.infer<typeof runCheckpointRequestSchema>;
 export type RunFinishRequest = z.infer<typeof runFinishRequestSchema>;
 export type RunFinishResponse = z.infer<typeof runFinishResponseSchema>;
+export type DropItem = z.infer<typeof dropItemSchema>;
+export type RunMilestoneRequest = z.infer<typeof runMilestoneRequestSchema>;
+export type RunMilestoneResponse = z.infer<typeof runMilestoneResponseSchema>;
+export type Sku = z.infer<typeof skuSchema>;
+export type ShopResponse = z.infer<typeof shopResponseSchema>;
+export type ShopInvoiceRequest = z.infer<typeof shopInvoiceRequestSchema>;
+export type ShopInvoiceResponse = z.infer<typeof shopInvoiceResponseSchema>;
 export type LeaderboardQuery = z.infer<typeof leaderboardQuerySchema>;
 export type LeaderboardResponse = z.infer<typeof leaderboardResponseSchema>;
 export type ProfileResponse = z.infer<typeof profileResponseSchema>;

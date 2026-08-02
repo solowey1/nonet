@@ -48,21 +48,32 @@ function findFilledCell(state: GameState): { row: number; col: number } | null {
   return null;
 }
 
-describe("welcome gift", () => {
-  it("grants a starter kit on first session, and doesn't re-grant on later sessions", async () => {
-    const first = await session(100);
-    expect(first.inventory).toEqual({ pencil: 3, eraser: 3, rocket: 2, bomb: 1, fill: 1 });
+function sumInventory(inventory: Record<string, number>): number {
+  return Object.values(inventory).reduce((sum, qty) => sum + qty, 0);
+}
 
-    // Log in again as the same user — should NOT grant a second kit.
+describe("welcome gift", () => {
+  it("grants a starter kit on first session (plus that day's daily gift), and doesn't re-grant either on a later same-day session", async () => {
+    const first = await session(100);
+    // Welcome kit (3+3+2+1+1=10) plus exactly one daily-gift item (streak=1, no 7-day bonus yet).
+    expect(first.inventory.pencil).toBeGreaterThanOrEqual(3);
+    expect(first.inventory.eraser).toBeGreaterThanOrEqual(3);
+    expect(first.inventory.rocket).toBeGreaterThanOrEqual(2);
+    expect(first.inventory.bomb).toBeGreaterThanOrEqual(1);
+    expect(first.inventory.fill).toBeGreaterThanOrEqual(1);
+    expect(sumInventory(first.inventory)).toBe(11);
+
+    // Log in again the same day — should NOT grant a second welcome kit or daily gift.
     const second = await session(100);
-    expect(second.inventory).toEqual({ pencil: 3, eraser: 3, rocket: 2, bomb: 1, fill: 1 });
+    expect(second.inventory).toEqual(first.inventory);
   });
 });
 
 describe("POST /api/inventory/consume", () => {
   it("decrements inventory and returns a usable consumeToken", async () => {
-    const { token } = await session(1);
+    const { token, inventory } = await session(1);
     const { runId, runToken } = await startRun(token);
+    const startingPencils = inventory.pencil ?? 0; // welcome kit (3) + maybe a daily-gift pencil
 
     const res = await app.inject({
       method: "POST",
@@ -72,30 +83,33 @@ describe("POST /api/inventory/consume", () => {
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.remaining).toBe(2); // started with 3
+    expect(body.remaining).toBe(startingPencils - 1);
     expect(typeof body.consumeToken).toBe("string");
   });
 
   it("rejects once an item's balance is exhausted", async () => {
-    const { token } = await session(2);
+    const { token, inventory } = await session(2);
     const { runId, runToken } = await startRun(token);
+    const startingBombs = inventory.bomb ?? 0; // welcome kit (1) + maybe a daily-gift bomb
+    expect(startingBombs).toBeGreaterThan(0);
 
-    // bomb starts at qty 1
-    const first = await app.inject({
+    for (let i = 0; i < startingBombs; i++) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/inventory/consume",
+        headers: { authorization: `Bearer ${runToken}` },
+        payload: { runId, item: "bomb" },
+      });
+      expect(res.statusCode).toBe(200);
+    }
+
+    const overdrawn = await app.inject({
       method: "POST",
       url: "/api/inventory/consume",
       headers: { authorization: `Bearer ${runToken}` },
       payload: { runId, item: "bomb" },
     });
-    expect(first.statusCode).toBe(200);
-
-    const second = await app.inject({
-      method: "POST",
-      url: "/api/inventory/consume",
-      headers: { authorization: `Bearer ${runToken}` },
-      payload: { runId, item: "bomb" },
-    });
-    expect(second.statusCode).toBe(409);
+    expect(overdrawn.statusCode).toBe(409);
   });
 
   it("rejects consuming against a run that isn't this token's run", async () => {

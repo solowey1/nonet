@@ -9,7 +9,7 @@ import { replay } from "@nonet/engine";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/client.js";
-import { runs, users } from "../db/schema.js";
+import { inventoryLedger, runs, users } from "../db/schema.js";
 import { env } from "../env.js";
 import { validateConsumeTokens } from "../services/inventory.js";
 import { bytesToHex, hexToBytes } from "../utils/hex.js";
@@ -76,6 +76,7 @@ export async function runRoutes(app: FastifyInstance) {
     const { actions } = parsed.data;
     const result = replay(hexToBytes(run.seed), actions);
     const usedPowerups = actions.some((a) => a.type === "powerup");
+    const revived = actions.some((a) => a.type === "revive");
 
     // The engine's replay has no concept of inventory, so a log that
     // fabricates or double-spends power-up actions would otherwise pass
@@ -95,6 +96,7 @@ export async function runRoutes(app: FastifyInstance) {
           piecesPlaced: result.finalState.piecesPlaced,
           perfectClears: result.finalState.perfectClears,
           usedPowerups,
+          revived,
           verified: true,
           actions,
         })
@@ -118,6 +120,7 @@ export async function runRoutes(app: FastifyInstance) {
           endedAt: new Date(),
           score: result.valid ? result.score : result.scoreSoFar,
           usedPowerups,
+          revived,
           verified: false,
           actions,
         })
@@ -138,11 +141,19 @@ export async function runRoutes(app: FastifyInstance) {
       rank = (countRow?.count ?? 0) + 1;
     }
 
+    // Every milestone drop actually earned this run — informational only,
+    // items were already granted at milestone time (§8).
+    const dropRows = await db
+      .select({ item: inventoryLedger.item })
+      .from(inventoryLedger)
+      .where(and(eq(inventoryLedger.runId, run.id), eq(inventoryLedger.reason, "drop")));
+    const drops = dropRows.map((r) => r.item).filter((item) => item !== "nothing");
+
     return reply.send(
       runFinishResponseSchema.parse({
         score: result.valid ? result.score : result.scoreSoFar,
         verified,
-        drops: [],
+        drops,
         rank,
       }),
     );

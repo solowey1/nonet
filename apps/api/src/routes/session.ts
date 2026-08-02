@@ -4,6 +4,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { db } from "../db/client.js";
 import { inventoryBalance, runs, users } from "../db/schema.js";
 import { env } from "../env.js";
+import { grantDailyGiftIfNeeded } from "../services/dailyGift.js";
 import { grantWelcomeGift } from "../services/inventory.js";
 import { validateInitData } from "../telegram/initData.js";
 
@@ -51,6 +52,8 @@ async function issueSession(reply: FastifyReply, profile: ProfileFields) {
       .where(eq(users.id, userId));
   }
 
+  const dailyGift = await grantDailyGiftIfNeeded(db, userId);
+
   const inventoryRows = await db
     .select({ item: inventoryBalance.item, qty: inventoryBalance.qty })
     .from(inventoryBalance)
@@ -88,6 +91,7 @@ async function issueSession(reply: FastifyReply, profile: ProfileFields) {
     },
     inventory,
     activeRun,
+    dailyGift,
   });
 }
 

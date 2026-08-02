@@ -8,6 +8,13 @@
       "when": 1785624951392,
       "tag": "0000_long_james_howlett",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785628746316,
+      "tag": "0001_curly_dragon_lord",
+      "breakpoints": true
     }
   ]
 }

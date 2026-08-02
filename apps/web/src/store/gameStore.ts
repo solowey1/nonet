@@ -20,8 +20,9 @@ import {
   postRunFinish,
   postRunStart,
   postSession,
+  postShopInvoice,
 } from "../api/client.js";
-import { bootstrapTelegramWebApp, getTelegramInitData, setClosingConfirmation } from "../telegram/webapp.js";
+import { bootstrapTelegramWebApp, getTelegramInitData, openInvoice, setClosingConfirmation } from "../telegram/webapp.js";
 import { maskToCells } from "../utils/bitmask.js";
 import { getOrCreateDevUserId } from "../utils/devUser.js";
 import { hexToBytes } from "../utils/hex.js";
@@ -63,6 +64,9 @@ export type BootStatus = "loading" | "ready" | "error";
 
 export type ConsumeFailureReason = "insufficient_inventory" | "region_too_large" | "invalid_target" | "network";
 
+/** `cancelled`/`pending` mirror Telegram's own openInvoice statuses (§13); `failed` also covers no-WebApp/network cases. */
+export type ReviveOutcome = "purchased" | "cancelled" | "pending" | "failed";
+
 interface GameStoreState {
   readonly bootStatus: BootStatus;
   readonly bootError: string | null;
@@ -79,6 +83,7 @@ interface GameStoreState {
   readonly inventory: Record<string, number>;
   readonly armedPowerup: PowerupKind | null;
   readonly finishResult: FinishResult | null;
+  readonly revivePending: boolean;
 
   bootstrap(): Promise<void>;
   place(slot: 0 | 1 | 2, row: number, col: number): boolean;
@@ -88,6 +93,8 @@ interface GameStoreState {
   applyBomb(row: number, col: number): Promise<boolean>;
   applyRocket(orientation: "row" | "col", index: number): Promise<boolean>;
   applyFillPowerup(row: number, col: number): Promise<{ ok: boolean; reason?: ConsumeFailureReason; regionSize?: number }>;
+  buyRevive(): Promise<ReviveOutcome>;
+  refreshInventory(): Promise<void>;
   newRun(): Promise<void>;
 }
 
@@ -136,9 +143,15 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     }
   }
 
-  async function maybeFinish(next: GameState, actionLog: SharedAction[]) {
-    if (next.status !== "gameover") return;
-    const { runId, runToken } = get();
+  // Deliberately not triggered the instant `game.status` flips to "gameover"
+  // (§8: a revive purchase must still be possible against this exact run) —
+  // called only once the player actually leaves the game-over screen, via
+  // `newRun()` below. Until then the run just sits open server-side; if the
+  // player never comes back, `/api/session` resumes it as `activeRun` next
+  // time, unfinished and un-scored, which is fine (see DECISIONS.md).
+  async function finishRun() {
+    const { game, runId, runToken, actionLog, finishResult } = get();
+    if (game.status !== "gameover" || finishResult) return;
     if (!runId || !runToken) return;
     setClosingConfirmation(false);
     try {
@@ -146,7 +159,7 @@ export const useGameStore = create<GameStoreState>((set, get) => {
       set({ finishResult: { score: result.score, verified: result.verified, rank: result.rank } });
     } catch (err) {
       console.error("run/finish failed — local score still stands, just unranked", err);
-      set({ finishResult: { score: next.score, verified: false, rank: null } });
+      set({ finishResult: { score: game.score, verified: false, rank: null } });
     }
   }
 
@@ -218,7 +231,6 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     });
 
     void maybeCheckpoint(nextActionLog);
-    void maybeFinish(next, nextActionLog);
     return true;
   }
 
@@ -245,6 +257,7 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     inventory: {},
     armedPowerup: null,
     finishResult: null,
+    revivePending: false,
 
     async bootstrap() {
       bootstrapTelegramWebApp();
@@ -345,7 +358,6 @@ export const useGameStore = create<GameStoreState>((set, get) => {
       });
 
       void maybeCheckpoint(nextActionLog);
-      void maybeFinish(next, nextActionLog);
       return true;
     },
 
@@ -388,9 +400,79 @@ export const useGameStore = create<GameStoreState>((set, get) => {
       return ok ? { ok: true } : { ok: false, reason: "network" };
     },
 
-    async newRun() {
+    async buyRevive() {
+      const { sessionToken, runId, runToken, game, actionLog, revivePending } = get();
+      if (!sessionToken || !runId || !runToken || game.status !== "gameover" || revivePending) return "failed";
+
+      set({ revivePending: true });
+      try {
+        let invoiceLink: string, purchaseId: string;
+        try {
+          const invoice = await postShopInvoice(sessionToken, "revive", runId);
+          invoiceLink = invoice.invoiceLink;
+          purchaseId = invoice.purchaseId;
+        } catch (err) {
+          console.error("failed to mint a revive invoice", err);
+          return "failed";
+        }
+
+        const status = await openInvoice(invoiceLink);
+        if (status !== "paid") return status;
+
+        // §13: openInvoice's "paid" is optimistic client-side signal — the
+        // bot's successful_payment webhook is the actual source of truth for
+        // crediting, but the purchase row it needs already exists (created
+        // above) so the consumeToken is valid the instant Telegram reports it.
+        const reviveAction = { t: Date.now(), type: "revive" as const, consumeToken: purchaseId };
+        let next: GameState;
+        try {
+          next = reduce(game, reviveAction);
+        } catch (err) {
+          console.error("engine rejected a just-purchased revive action", err);
+          return "failed";
+        }
+
+        const nextActionLog = [...actionLog, reviveAction as SharedAction];
+        set({
+          game: next,
+          actionLog: nextActionLog,
+          cellFamilies: freshCellFamilies(), // board was reset — cosmetic only, see DECISIONS.md
+          lastClear: null,
+          finishResult: null,
+        });
+        setClosingConfirmation(true);
+        void maybeCheckpoint(nextActionLog);
+        return "purchased";
+      } finally {
+        set({ revivePending: false });
+      }
+    },
+
+    async refreshInventory() {
+      // No standalone "GET my inventory" endpoint — /api/session already
+      // returns the current balance and is safe to re-call mid-session (the
+      // daily gift it may grant is idempotent per calendar day server-side).
       const { sessionToken } = get();
       if (!sessionToken) return;
+      try {
+        const initData = getTelegramInitData();
+        const session = initData
+          ? await postSession(initData)
+          : import.meta.env.DEV
+            ? await postDevSession(getOrCreateDevUserId(), "dev")
+            : null;
+        if (session) set({ sessionToken: session.token, inventory: session.inventory });
+      } catch (err) {
+        console.error("failed to refresh inventory", err);
+      }
+    },
+
+    async newRun() {
+      const { sessionToken, game } = get();
+      if (!sessionToken) return;
+      // Fire-and-forget, same as the old auto-finish: the player chose to
+      // move on without reviving, so the run is really over now.
+      if (game.status === "gameover") void finishRun();
       await startFreshRun(sessionToken);
     },
   };
