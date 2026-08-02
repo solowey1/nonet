@@ -133,13 +133,10 @@ re-blessed.
 
 ## Not yet built (per §19's build order)
 
-Steps 1-4 are done (engine, playable slice, backend+auth+leaderboards,
-power-ups + consume-at-use inventory). Step 5 (economy/Stars/shop) is next —
-`purchases` exists in the schema but nothing writes to it, there's no
-shop/invoice route, and the bot doesn't handle Stars payments yet. Milestone
-drops and the daily gift (§8) also belong to step 5 — right now the *only*
-source of inventory is the one-time welcome gift from Phase 3, which was
-always meant as a stand-in (see its own entry below).
+Steps 1-5 are done (engine, playable slice, backend+auth+leaderboards,
+power-ups + consume-at-use inventory, economy/Stars/shop/revive — see the
+Phase 5 section below). Step 6 (polish) and step 7 (Gram/TON stubs) are
+next.
 
 ---
 
@@ -467,3 +464,170 @@ a bug). Also reconfirmed collision rejection and score accounting still
 work after the store rewrite. 134 tests pass across the workspace
 (109 engine + 25 api); production build stays at 85 KB JS / 2.4 KB CSS
 gzipped, still under the §16 budgets.
+
+# Phase 5: economy (drops, shop, Stars, revive)
+
+§19 step 5's four pieces — milestone drops, the shop, the Stars invoice
+flow, and revive — all hang off the same primitive: a data-driven
+`shop_skus` table and a `purchases` row per invoice. Revive isn't its own
+mechanism so much as `sku='revive'` with a `runId` attached and empty
+`contents` (it re-opens a run instead of granting an item).
+
+## `purchases.telegram_payment_charge_id` is nullable, contradicting §11's literal spec
+
+§11 specifies `telegram_payment_charge_id text UNIQUE NOT NULL`, but §13's
+own flow requires persisting a `pending` purchase row *before* a charge id
+exists — payment hasn't happened yet when `/api/shop/invoice` creates it.
+Those two requirements can't both hold. Made the column nullable and kept
+it `UNIQUE`: Postgres treats every `NULL` as distinct from every other
+`NULL`, so any number of pending purchases can coexist, and the constraint
+still does its real job — preventing the *same paid charge* from being
+processed twice — the moment a row transitions to `paid` with a real id.
+
+## Revive's `consumeToken` reuses the existing pattern, against a second table
+
+Phase 4 already solved "prove this token was really issued, to this run,
+without a signed token" for power-ups, by making the consumeToken the
+`inventory_ledger` row id. Revive isn't an inventory item, so it has no
+ledger row — but the same shape of proof exists in `purchases`: a paid
+`sku='revive'` row tied to this `runId`. `validateConsumeTokens`
+(services/inventory.ts) now checks both action kinds in one pass, with a
+regex UUID-format check on revive tokens before they ever reach a `WHERE id
+= ANY(...)` query against a `uuid` column — a fabricated non-UUID string
+would otherwise make Postgres throw a cast error instead of just finding no
+rows, which is the wrong failure mode for "tampered log," not the right one.
+
+## The bot service never touches Postgres — two internal HTTP endpoints instead
+
+`apps/bot` could have imported the Drizzle schema directly, but that
+couples two independently-deployable services to the same DB migrations.
+Instead it calls two tiny `/api/internal/*` routes on the api service,
+authenticated by a shared secret header (`X-Internal-Secret`) and also
+denied at the nginx edge as defense in depth (docker/nginx/nginx.conf) —
+`validate` for `pre_checkout_query` (must answer within 10s) and
+`stars-payment` for `successful_payment` (does the actual crediting).
+
+## `successful_payment`'s handler deliberately has no try/catch
+
+Verified directly against grammY's compiled source: `webhookCallback` calls
+`bot.handleUpdate()` (singular), which does **not** invoke the registered
+`bot.catch()` handler — that only fires from `handleUpdates()` (the
+batch/polling path). So a throw inside the `successful_payment` handler
+propagates out as a rejected promise, Fastify turns that into a 500, and
+Telegram retries the webhook delivery later. Since
+`/api/internal/stars-payment` is idempotent on the charge id, that retry is
+always safe — swallowing the error here would instead silently strand a
+paid purchase with no automatic recovery. This is the one place in the bot
+that intentionally lets an error escape uncaught.
+
+## The "realtime nudge" is just a bot reply with a button
+
+§13 asks for pushing an update to an open Mini App once a payment lands.
+There's no push channel into a live WebView — so `successful_payment`'s
+handler sends a normal text message with an inline "▶️ Open NONET" button,
+which is the practical equivalent given the platform.
+
+## Milestone drops and the daily gift both use the same race-safe "first grant" pattern
+
+`INSERT ... ON CONFLICT DO NOTHING ... RETURNING` lets each caller find out,
+atomically, whether *it* was the one that actually inserted the row — only
+then does it proceed to roll a drop / grant a gift. This is the same
+pattern Phase 4's welcome gift already used, now reused twice more: the
+daily gift keys on `(user_id, day)`, and milestone grants key on
+`(run_id, ref)` where `ref = 'milestone-N'`. No separate
+check-then-insert race window either time.
+
+## Drop-rate constants are a placeholder, per §20
+
+`services/drops.ts`'s weighted pool (`nothing` 30, pencil 30, eraser 21,
+rocket 12, bomb 6, fill 1) plus a hard cap (15) and a "well-stocked" bonus
+toward `nothing` (+15 per item at/above 8) are reasonable-looking numbers
+invented for playability, not a real economy decision — §20 explicitly
+defers exact drop rates to "propose the new number." Same for the daily
+gift's weights (no `nothing` option, since a daily gift that does nothing
+feels bad) and its 1-in-7-day streak bonus.
+
+## Finishing a run is deferred until the player actually leaves the game-over screen
+
+Originally `gameStore.ts`'s `maybeFinish` fired `/api/run/finish` the
+instant `game.status` became `"gameover"` — fine before revive existed, but
+fatal once it did: by the time a player could tap "Revive," the run would
+already be finalized server-side (`endedAt` set), and `/api/shop/invoice`
+requires the run still be open (`endedAt is null`). The call is now
+`finishRun()`, triggered only from `newRun()` (i.e. the player chose "Play
+again" over reviving) — fire-and-forget, same as before, just moved to a
+later trigger point. A player who closes the app on the game-over screen
+without choosing either option leaves the run genuinely unfinished; the
+next `/api/session` call resumes it as `activeRun` exactly as if they'd
+checkpointed mid-game, which is the correct, unsurprising behavior — no
+timeout or forced-finish was added for this, since the brief doesn't call
+for one and the run is unranked either way until finished.
+
+## Revive is offered only from the game-over screen, not the general shop
+
+The shop screen (`ShopOverlay.tsx`) fetches `/api/shop` and filters out
+`sku === "revive"` before rendering — buying a revive without a specific
+dead run to attach it to doesn't mean anything server-side
+(`/api/shop/invoice` 400s a revive request with no `runId`), so it's only
+offered contextually, as a button on `GameOverOverlay`, which always has
+the current `runId` in scope.
+
+## No dedicated "refresh inventory" endpoint
+
+After a non-revive shop purchase, the client needs to eventually see the
+new items, but Telegram's `openInvoice` "paid" callback is optimistic —
+crediting only actually happens once the bot's `successful_payment` webhook
+lands, which can lag the callback by a moment. Rather than add a new
+`GET /api/inventory` route, `refreshInventory()` just re-calls
+`postSession`/`postDevSession` — already idempotent per calendar day for
+the gift it may (re-)grant — and takes the fresh `inventory` off the
+response. `ShopOverlay` calls it ~1.5s after a "paid" result, giving the
+webhook a moment to land first.
+
+## Bug found during manual verification: the Telegram Web App SDK script was never loaded
+
+`apps/web/index.html` never included
+`<script src="https://telegram.org/js/telegram-web-app.js">` — a Phase
+2/3 scaffolding gap, not a Phase 5 one, but only surfaced now via testing
+inside a real Telegram client. Without it, `window.Telegram.WebApp` doesn't
+exist at all (not even as an empty stub), so `getTelegramInitData()` always
+returned `null` and boot failed with "no Telegram initData available
+outside a Telegram WebView" — even though the app genuinely was running
+inside Telegram's Mini App WebView, which does inject `initData` once the
+SDK script defines `window.Telegram.WebApp` to receive it. Fixed by adding
+the script tag; every previous manual verification pass had used
+`ALLOW_DEV_SESSION`/`postDevSession` in a plain browser, which never
+exercises this path, so it went unnoticed until real-device testing.
+
+## Test-only: a greedy autoplay bot, alongside the existing naive one
+
+`autoplay()` (first-legal-position scan) is deliberately dumb and stalls
+into a low score fast — great for cheaply reaching a real `gameover` state,
+useless for milestone tests that need a genuinely-played run to legitimately
+clear score 1000+ against a truly random, server-issued seed (only ~2% of
+random seeds hit 1000 under the naive bot within a generous action budget).
+Added `autoplayGreedy` (picks whichever legal placement scores the most
+that turn) alongside it rather than replacing it — raises the hit rate to
+roughly 3-in-4 seeds, cheaply, while every existing test that depended on
+the naive bot's specific (slower, lower-scoring) behavior keeps working
+unchanged. `continueGreedy` extracts the shared step logic so a test can
+also resume greedy play from an arbitrary mid-run state — used to keep
+playing after a revive resets the board, to build a legitimate log for
+`/api/run/finish`.
+
+## Verified end-to-end against a live API + Postgres, revive and shop included
+
+Ran the real dev server stack and drove the game-over screen through
+headless Chromium: forced a game-over via the dev store hook, confirmed
+both "Revive" and "Play again" render and are reachable, confirmed a revive
+attempt correctly calls `/api/shop/invoice` and surfaces a graceful failure
+hint (this sandbox can't reach `api.telegram.org` to mint a real invoice —
+the one thing genuinely untestable without live Telegram Stars), and
+confirmed "Play again" correctly finishes the forced run
+(`/api/run/finish` → 200) and starts a fresh one. Separately opened the
+shop overlay, confirmed it lists all seeded SKUs except `revive`, and
+confirmed a purchase attempt fails the same graceful way. Backend-side: 48
+API integration tests across 7 files (shop, internal payment webhook
+idempotency + crediting, milestone drops, a full paid-revive-through-
+`run/finish` flow, and a rejected-unpaid-revive-token case) plus the
+existing 111 engine tests all pass.

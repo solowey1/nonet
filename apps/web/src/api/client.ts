@@ -5,11 +5,15 @@ import {
   type RunFinishResponse,
   type RunStartResponse,
   type SessionResponse,
+  type ShopInvoiceResponse,
+  type ShopResponse,
   inventoryConsumeResponseSchema,
   runCheckpointResponseSchema,
   runFinishResponseSchema,
   runStartResponseSchema,
   sessionResponseSchema,
+  shopInvoiceResponseSchema,
+  shopResponseSchema,
 } from "@nonet/shared";
 
 const API_BASE = "/api";
@@ -33,6 +37,15 @@ async function postJson<T>(path: string, payload: unknown, token: string | null,
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(payload),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new ApiError(res.status, json);
+  return schema.parse(json);
+}
+
+async function getJson<T>(path: string, token: string | null, schema: { parse: (v: unknown) => T }): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   const json = await res.json().catch(() => null);
   if (!res.ok) throw new ApiError(res.status, json);
@@ -66,4 +79,12 @@ export function postInventoryConsume(
   item: PowerupKind,
 ): Promise<InventoryConsumeResponse> {
   return postJson("/inventory/consume", { runId, item }, runToken, inventoryConsumeResponseSchema);
+}
+
+export function getShop(): Promise<ShopResponse> {
+  return getJson("/shop", null, shopResponseSchema);
+}
+
+export function postShopInvoice(sessionToken: string, sku: string, runId?: string): Promise<ShopInvoiceResponse> {
+  return postJson("/shop/invoice", runId ? { sku, runId } : { sku }, sessionToken, shopInvoiceResponseSchema);
 }

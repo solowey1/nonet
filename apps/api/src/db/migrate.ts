@@ -10,6 +10,7 @@ import postgres from "postgres";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { env } from "../env.js";
+import { seedShopSkus } from "./seedShop.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -26,6 +27,8 @@ async function main() {
     const db = drizzle(client);
     await migrate(db, { migrationsFolder: join(__dirname, "..", "..", "drizzle") });
     console.log("migrations applied");
+    await seedShopSkus(db);
+    console.log("shop SKUs seeded");
   } finally {
     await client`SELECT pg_advisory_unlock(${MIGRATION_LOCK_KEY}::bigint)`;
     await client.end();

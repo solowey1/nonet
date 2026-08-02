@@ -8,6 +8,7 @@ import { HandTray } from "./components/HandTray.js";
 import { InventoryBar } from "./components/InventoryBar.js";
 import { RocketGutters } from "./components/RocketGutters.js";
 import { ScoreHud } from "./components/ScoreHud.js";
+import { ShopOverlay } from "./components/ShopOverlay.js";
 import { useCellSize } from "./hooks/useCellSize.js";
 import { useDragPlacement } from "./hooks/useDragPlacement.js";
 import { usePowerupTargeting, type TargetingState } from "./hooks/usePowerupTargeting.js";
@@ -56,11 +57,16 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
   const inventory = useGameStore((s) => s.inventory);
   const armedPowerup = useGameStore((s) => s.armedPowerup);
   const finishResult = useGameStore((s) => s.finishResult);
+  const revivePending = useGameStore((s) => s.revivePending);
+  const sessionToken = useGameStore((s) => s.sessionToken);
   const armPowerup = useGameStore((s) => s.armPowerup);
   const applyRocket = useGameStore((s) => s.applyRocket);
+  const buyRevive = useGameStore((s) => s.buyRevive);
+  const refreshInventory = useGameStore((s) => s.refreshInventory);
   const newRun = useGameStore((s) => s.newRun);
 
   const [hint, setHint] = useState<string | null>(null);
+  const [shopOpen, setShopOpen] = useState(false);
 
   const { drag, beginDrag } = useDragPlacement(boardRef);
   const { targeting, beginTargeting } = usePowerupTargeting(boardRef);
@@ -107,7 +113,12 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
 
   return (
     <div className={styles.app}>
-      <ScoreHud score={game.score} comboLevel={game.comboLevel} />
+      <div className={styles.hudRow}>
+        <ScoreHud score={game.score} comboLevel={game.comboLevel} />
+        <button type="button" className={styles.shopButton} onClick={() => setShopOpen(true)}>
+          🛍 Shop
+        </button>
+      </div>
       <InventoryBar inventory={inventory} armed={armedPowerup} onArm={armPowerup} />
       <div className={styles.hint}>{hint}</div>
 
@@ -122,7 +133,13 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
           onPointerDown={onBoardPointerDown}
         />
         {game.status === "gameover" && (
-          <GameOverOverlay game={game} finishResult={finishResult} onRestart={() => void newRun()} />
+          <GameOverOverlay
+            game={game}
+            finishResult={finishResult}
+            revivePending={revivePending}
+            onRestart={() => void newRun()}
+            onBuyRevive={buyRevive}
+          />
         )}
       </div>
 
@@ -138,6 +155,14 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
       <DragLayer drag={drag} piece={draggedPiece ?? null} cellSize={cellSize || 40} />
       <ComboPopup clearEvent={lastClear} boardRef={boardRef} />
       <RocketGutters boardRef={boardRef} visible={armedPowerup === "rocket"} onFire={handleRocketFire} />
+
+      {shopOpen && sessionToken && (
+        <ShopOverlay
+          sessionToken={sessionToken}
+          onClose={() => setShopOpen(false)}
+          onPurchased={refreshInventory}
+        />
+      )}
     </div>
   );
 }

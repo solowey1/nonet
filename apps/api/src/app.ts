@@ -2,11 +2,14 @@ import fastifyRateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import { authPlugin } from "./plugins/auth.js";
 import { env } from "./env.js";
+import { internalRoutes } from "./routes/internal.js";
 import { inventoryRoutes } from "./routes/inventory.js";
 import { leaderboardRoutes } from "./routes/leaderboard.js";
+import { milestoneRoutes } from "./routes/milestone.js";
 import { profileRoutes } from "./routes/profile.js";
 import { runRoutes } from "./routes/run.js";
 import { sessionRoutes } from "./routes/session.js";
+import { shopRoutes } from "./routes/shop.js";
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -20,6 +23,9 @@ export function buildApp(): FastifyInstance {
   app.register(sessionRoutes);
   app.register(runRoutes);
   app.register(inventoryRoutes);
+  app.register(shopRoutes);
+  app.register(milestoneRoutes);
+  app.register(internalRoutes);
   app.register(leaderboardRoutes);
   app.register(profileRoutes);
 

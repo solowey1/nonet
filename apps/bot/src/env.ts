@@ -12,6 +12,10 @@ const envSchema = z.object({
   // If set, the bot registers this as its webhook URL with Telegram on boot.
   // Left unset in local dev, where the webhook is configured manually/out of band.
   PUBLIC_WEBHOOK_URL: z.string().url().optional(),
+  // Where to reach the api service's /api/internal/* routes (§13's Stars
+  // flow) — the docker-compose service name internally, localhost in local dev.
+  INTERNAL_API_URL: z.string().url().default("http://api:3000"),
+  INTERNAL_API_SECRET: z.string().min(16),
 });
 
 export type Env = z.infer<typeof envSchema>;

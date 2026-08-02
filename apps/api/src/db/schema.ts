@@ -1,14 +1,12 @@
 /**
- * Data model (§11). Append-only `inventoryLedger` is the point: every item a
- * player holds must be explainable. `purchases.telegramPaymentChargeId` is
- * UNIQUE for free idempotency — Telegram can and does re-deliver webhook
- * updates.
+ * Data model (§11, plus `shopSkus` for §8's data-driven SKU table). Append-only
+ * `inventoryLedger` is the point: every item a player holds must be
+ * explainable. `purchases.telegramPaymentChargeId` is UNIQUE for free
+ * idempotency — Telegram can and does re-deliver webhook updates.
  *
- * Only `users` and `runs` are actively written by Phase 3 (auth + run
- * lifecycle + leaderboards). `inventoryLedger`/`inventoryBalance`/
- * `purchases`/`dailyStats` exist now so the schema is a single, coherent
- * unit and migrations don't need a disruptive follow-up — they'll be wired
- * up by the economy work in later phases (§19 steps 4-5).
+ * As of Phase 5 (economy), every table here is live: `shopSkus` backs the
+ * shop, `purchases`/`inventoryLedger` record the Stars flow, `dailyStats`
+ * backs the daily gift/streak.
  */
 import { sql } from "drizzle-orm";
 import {
@@ -82,18 +80,28 @@ export const runs = pgTable(
   ],
 );
 
-export const inventoryLedger = pgTable("inventory_ledger", {
-  id: bigserial("id", { mode: "bigint" }).primaryKey(),
-  userId: bigint("user_id", { mode: "bigint" })
-    .notNull()
-    .references(() => users.id),
-  item: text("item").notNull(),
-  delta: integer("delta").notNull(),
-  reason: inventoryLedgerReason("reason").notNull(),
-  ref: text("ref"),
-  runId: uuid("run_id").references(() => runs.id),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const inventoryLedger = pgTable(
+  "inventory_ledger",
+  {
+    id: bigserial("id", { mode: "bigint" }).primaryKey(),
+    userId: bigint("user_id", { mode: "bigint" })
+      .notNull()
+      .references(() => users.id),
+    item: text("item").notNull(),
+    delta: integer("delta").notNull(),
+    reason: inventoryLedgerReason("reason").notNull(),
+    ref: text("ref"),
+    runId: uuid("run_id").references(() => runs.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Makes milestone-drop grants idempotent: a repeat POST /api/run/milestone
+    // for the same (run, "milestone-N") ref can't insert twice (§8).
+    uniqueIndex("inventory_ledger_run_ref_unique")
+      .on(table.runId, table.ref)
+      .where(sql`${table.ref} is not null`),
+  ],
+);
 
 export const inventoryBalance = pgTable(
   "inventory_balance",
@@ -107,18 +115,43 @@ export const inventoryBalance = pgTable(
   (table) => [primaryKey({ columns: [table.userId, table.item] }), check("inventory_balance_qty_check", sql`${table.qty} >= 0`)],
 );
 
-export const purchases = pgTable("purchases", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: bigint("user_id", { mode: "bigint" })
-    .notNull()
-    .references(() => users.id),
-  telegramPaymentChargeId: text("telegram_payment_charge_id").notNull(),
-  sku: text("sku").notNull(),
+export const purchases = pgTable(
+  "purchases",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: bigint("user_id", { mode: "bigint" })
+      .notNull()
+      .references(() => users.id),
+    // Nullable: §13's own flow persists a 'pending' row *before* payment
+    // happens, when no charge id exists yet — Postgres's UNIQUE constraint
+    // already treats NULL as distinct from NULL, so this doesn't weaken the
+    // idempotency guarantee once a real charge id is set (see DECISIONS.md).
+    telegramPaymentChargeId: text("telegram_payment_charge_id"),
+    sku: text("sku").notNull(),
+    starsAmount: integer("stars_amount").notNull(),
+    payload: text("payload").notNull(),
+    status: purchaseStatus("status").notNull().default("pending"),
+    // Which run a 'revive' purchase is for — null for every other SKU.
+    runId: uuid("run_id").references(() => runs.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("purchases_charge_id_unique").on(table.telegramPaymentChargeId),
+    uniqueIndex("purchases_payload_unique").on(table.payload),
+  ],
+);
+
+export const shopSkus = pgTable("shop_skus", {
+  sku: text("sku").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
   starsAmount: integer("stars_amount").notNull(),
-  payload: text("payload").notNull(),
-  status: purchaseStatus("status").notNull().default("pending"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [uniqueIndex("purchases_charge_id_unique").on(table.telegramPaymentChargeId)]);
+  // e.g. {"pencil": 5} for pencil_5, {} for revive (not an inventory grant —
+  // see the invoice handler). Kept data-driven per §8: "put them in a DB
+  // table, not in code, so they can change without a deploy."
+  contents: jsonb("contents").notNull().default(sql`'{}'::jsonb`),
+  active: boolean("active").notNull().default(true),
+});
 
 export const dailyStats = pgTable(
   "daily_stats",

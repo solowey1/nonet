@@ -1,7 +1,7 @@
 import type { Action, PowerupKind } from "@nonet/shared";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { db as dbClient } from "../db/client.js";
-import { inventoryBalance, inventoryLedger } from "../db/schema.js";
+import { inventoryBalance, inventoryLedger, purchases } from "../db/schema.js";
 
 type Executor = typeof dbClient;
 
@@ -44,37 +44,69 @@ export async function grantWelcomeGift(db: Executor, userId: bigint): Promise<vo
  * makes "consumed at use time" actually enforceable server-side: the engine's
  * own replay has no concept of inventory, so a tampered log that adds extra
  * power-up actions (or replays one token twice) would otherwise sail through
- * replay verification untouched.
+ * replay verification untouched. `revive` actions get the same treatment,
+ * checked against `purchases` instead of `inventoryLedger` (a revive isn't
+ * an inventory item — see reduce.ts's `reduceRevive`).
  */
 export async function validateConsumeTokens(db: Executor, userId: bigint, runId: string, actions: readonly Action[]): Promise<boolean> {
   const powerupActions = actions.filter((a): a is Extract<Action, { type: "powerup" }> => a.type === "powerup");
-  if (powerupActions.length === 0) return true;
+  const reviveActions = actions.filter((a): a is Extract<Action, { type: "revive" }> => a.type === "revive");
+  if (powerupActions.length === 0 && reviveActions.length === 0) return true;
 
-  const tokens = powerupActions.map((a) => a.consumeToken);
-  if (new Set(tokens).size !== tokens.length) return false; // one token claimed by 2+ actions
+  const powerupTokens = powerupActions.map((a) => a.consumeToken);
+  const reviveTokens = reviveActions.map((a) => a.consumeToken);
+  if (new Set(powerupTokens).size !== powerupTokens.length) return false;
+  if (new Set(reviveTokens).size !== reviveTokens.length) return false;
 
-  let ids: bigint[];
-  try {
-    ids = tokens.map((t) => {
-      if (!/^\d+$/.test(t)) throw new Error("not a plain integer");
-      return BigInt(t);
-    });
-  } catch {
-    return false;
+  let powerupsOk = true;
+  if (powerupActions.length > 0) {
+    let ids: bigint[];
+    try {
+      ids = powerupTokens.map((t) => {
+        if (!/^\d+$/.test(t)) throw new Error("not a plain integer");
+        return BigInt(t);
+      });
+    } catch {
+      powerupsOk = false;
+      ids = [];
+    }
+    if (powerupsOk) {
+      const rows = await db
+        .select({ id: inventoryLedger.id, item: inventoryLedger.item })
+        .from(inventoryLedger)
+        .where(
+          and(
+            inArray(inventoryLedger.id, ids),
+            eq(inventoryLedger.userId, userId),
+            eq(inventoryLedger.runId, runId),
+            eq(inventoryLedger.reason, "use"),
+          ),
+        );
+      const itemById = new Map(rows.map((r) => [r.id.toString(), r.item]));
+      powerupsOk = powerupActions.every((action) => itemById.get(action.consumeToken) === action.kind);
+    }
+  }
+  if (!powerupsOk) return false;
+
+  if (reviveActions.length > 0) {
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (reviveTokens.some((t) => !uuidPattern.test(t))) return false; // fabricated/malformed token — never a valid purchase id
+
+    const rows = await db
+      .select({ id: purchases.id })
+      .from(purchases)
+      .where(
+        and(
+          inArray(purchases.id, reviveTokens),
+          eq(purchases.userId, userId),
+          eq(purchases.runId, runId),
+          eq(purchases.sku, "revive"),
+          eq(purchases.status, "paid"),
+        ),
+      );
+    const validIds = new Set(rows.map((r) => r.id));
+    if (!reviveActions.every((action) => validIds.has(action.consumeToken))) return false;
   }
 
-  const rows = await db
-    .select({ id: inventoryLedger.id, item: inventoryLedger.item })
-    .from(inventoryLedger)
-    .where(
-      and(
-        inArray(inventoryLedger.id, ids),
-        eq(inventoryLedger.userId, userId),
-        eq(inventoryLedger.runId, runId),
-        eq(inventoryLedger.reason, "use"),
-      ),
-    );
-
-  const itemById = new Map(rows.map((r) => [r.id.toString(), r.item]));
-  return powerupActions.every((action) => itemById.get(action.consumeToken) === action.kind);
+  return true;
 }

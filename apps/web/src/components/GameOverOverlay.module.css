@@ -56,19 +56,46 @@
   font-size: 1rem;
 }
 
-.restart {
+.reviveHint {
+  min-height: 1.1em;
+  font-size: 0.8rem;
+  color: var(--nonet-text-dim);
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+.restart,
+.revive {
   min-height: 44px;
   min-width: 44px;
-  padding: 10px 28px;
+  padding: 10px 24px;
   border-radius: var(--nonet-radius);
   border: none;
-  background: var(--nonet-accent);
-  color: #0b0e13;
   font-weight: 700;
   font-size: 1rem;
   cursor: pointer;
 }
 
-.restart:active {
+.restart {
+  background: var(--nonet-accent);
+  color: #0b0e13;
+}
+
+.revive {
+  background: transparent;
+  border: 1px solid var(--nonet-accent);
+  color: var(--nonet-accent);
+}
+
+.revive:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.restart:active,
+.revive:active {
   transform: scale(0.97);
 }

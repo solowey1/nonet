@@ -7,6 +7,8 @@
  * without it, dragging a piece downward closes the app.
  */
 
+export type InvoiceStatus = "paid" | "cancelled" | "failed" | "pending";
+
 interface TelegramWebApp {
   initData: string;
   ready(): void;
@@ -14,6 +16,7 @@ interface TelegramWebApp {
   disableVerticalSwipes?(): void;
   enableClosingConfirmation?(): void;
   disableClosingConfirmation?(): void;
+  openInvoice?(url: string, callback: (status: InvoiceStatus) => void): void;
 }
 
 declare global {
@@ -44,4 +47,16 @@ export function setClosingConfirmation(enabled: boolean): void {
   if (!webApp) return;
   if (enabled) webApp.enableClosingConfirmation?.();
   else webApp.disableClosingConfirmation?.();
+}
+
+/**
+ * Opens Telegram's native Stars payment sheet for an invoice link (§13).
+ * Outside a real Telegram WebView (e.g. local dev in a plain browser) there's
+ * no such sheet to open — resolves "failed" rather than throwing, since a
+ * Stars purchase is fundamentally untestable there (see DECISIONS.md).
+ */
+export function openInvoice(url: string): Promise<InvoiceStatus> {
+  const webApp = getWebApp();
+  if (!webApp?.openInvoice) return Promise.resolve("failed");
+  return new Promise((resolve) => webApp.openInvoice?.(url, resolve));
 }

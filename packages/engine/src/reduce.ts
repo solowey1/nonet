@@ -74,7 +74,12 @@ export type PowerupAction =
   | { readonly t: number; readonly type: "powerup"; readonly kind: "bomb"; readonly r: number; readonly c: number }
   | { readonly t: number; readonly type: "powerup"; readonly kind: "fill"; readonly r: number; readonly c: number };
 
-export type Action = PlaceAction | PowerupAction;
+export interface ReviveAction {
+  readonly t: number;
+  readonly type: "revive";
+}
+
+export type Action = PlaceAction | PowerupAction | ReviveAction;
 
 export function isGameOver(board: Board, hand: Hand): boolean {
   for (const piece of hand) {
@@ -108,9 +113,34 @@ export function reduce(state: GameState, action: Action): GameState {
     }
     return reducePlace(state, action);
   }
+  if (action.type === "revive") {
+    return reduceRevive(state);
+  }
   // Power-ups remain usable on the game-over screen as a rescue (§7),
   // which may bring status back to "playing" below.
   return reducePowerup(state, action);
+}
+
+/**
+ * §8's "revive" SKU: continue a dead run once. Clearing the entire board is
+ * the simplest transform that's *always* correct for "guarantee the current
+ * hand is placeable" — every catalogue piece fits somewhere on an empty 9x9
+ * board, so there's no need to compute a minimal clear. Doesn't score, reset
+ * `perfectClears`, or count as `powerupsUsed` — it's a distinct purchased
+ * mechanic, not one of the five power-ups (the DB layer tracks "used a
+ * revive" separately from "used a power-up" for the Pure leaderboard, §8).
+ */
+function reduceRevive(state: GameState): GameState {
+  if (state.status !== "gameover") {
+    throw new Error("revive is only usable after game over");
+  }
+  const next: GameState = {
+    ...state,
+    board: EMPTY_BOARD,
+    comboLevel: 0,
+    status: "playing",
+  };
+  return { ...next, status: isGameOver(next.board, next.hand) ? "gameover" : "playing" };
 }
 
 function reducePlace(state: GameState, action: PlaceAction): GameState {
