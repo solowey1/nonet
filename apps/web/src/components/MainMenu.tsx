@@ -1,10 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { PowerupKind } from "@nonet/shared";
+import { postWalletLink } from "../api/client.js";
 import { useGameStore } from "../store/gameStore.js";
 import { hapticSelection, isHapticsEnabled, setHapticsEnabled } from "../telegram/webapp.js";
+import { currentWalletAddress, disconnectWallet, onWalletChange, openWalletConnectModal } from "../telegram/tonConnect.js";
 import { LeaderboardScreen } from "./LeaderboardScreen.js";
 import { ShopOverlay } from "./ShopOverlay.js";
 import styles from "./MainMenu.module.css";
+
+function formatWalletAddress(address: string): string {
+  return address.length > 10 ? `${address.slice(0, 4)}…${address.slice(-4)}` : address;
+}
 
 const POWERUPS: ReadonlyArray<{ kind: PowerupKind; emoji: string }> = [
   { kind: "pencil", emoji: "✏️" },
@@ -23,6 +29,7 @@ export function MainMenu() {
   const refreshInventory = useGameStore((s) => s.refreshInventory);
   const newRun = useGameStore((s) => s.newRun);
   const continueRun = useGameStore((s) => s.continueRun);
+  const loadProfile = useGameStore((s) => s.loadProfile);
 
   const [shopOpen, setShopOpen] = useState(false);
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
@@ -31,6 +38,21 @@ export function MainMenu() {
   // state, and by the time this screen can render, bootstrap's own
   // (fire-and-forget) preference load has almost always already resolved.
   const [hapticsOn, setHapticsOn] = useState(() => isHapticsEnabled());
+  const [walletAddress, setWalletAddress] = useState<string | null>(() => currentWalletAddress());
+  const [walletBusy, setWalletBusy] = useState(false);
+
+  // TonConnectUI fires once immediately with whatever session it already
+  // restored on load (or null), then again on every connect/disconnect —
+  // each firing is persisted server-side (§14 stub: address capture only).
+  useEffect(() => {
+    return onWalletChange((address) => {
+      setWalletAddress(address);
+      if (!sessionToken) return;
+      void postWalletLink(sessionToken, address)
+        .then(() => void loadProfile())
+        .catch((err) => console.error("failed to persist wallet link", err));
+    });
+  }, [sessionToken, loadProfile]);
 
   const hasActiveRun = runId !== null;
 
@@ -113,6 +135,39 @@ export function MainMenu() {
         />
         Haptic feedback
       </label>
+
+      <div className={styles.walletRow}>
+        {walletAddress ? (
+          <>
+            <span className={styles.walletAddress}>🔗 {formatWalletAddress(walletAddress)}</span>
+            <button
+              type="button"
+              className={styles.walletButton}
+              disabled={walletBusy}
+              onClick={() => {
+                hapticSelection();
+                setWalletBusy(true);
+                void disconnectWallet().finally(() => setWalletBusy(false));
+              }}
+            >
+              Disconnect
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className={styles.walletButton}
+            disabled={walletBusy}
+            onClick={() => {
+              hapticSelection();
+              setWalletBusy(true);
+              void openWalletConnectModal().finally(() => setWalletBusy(false));
+            }}
+          >
+            🔗 Connect wallet for future Gram rewards
+          </button>
+        )}
+      </div>
 
       {shopOpen && sessionToken && (
         <ShopOverlay sessionToken={sessionToken} onClose={() => setShopOpen(false)} onPurchased={refreshInventory} />

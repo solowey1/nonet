@@ -276,6 +276,26 @@ export const profileResponseSchema = z.object({
     })
     .nullable(),
   streak: z.number().int().nonnegative(),
+  // §14/§7 stub: a linked TON Connect wallet address, for future Gram
+  // reward payouts — null if the player has never connected one.
+  tonAddress: z.string().nullable(),
+});
+
+// --- POST /api/profile/wallet (§14: TON Connect wallet link stub) ---
+
+// Accepts either TON's "user-friendly" base64url address form (as TonConnect
+// UI reports it) or the raw `workchain:hex` form — permissive on purpose,
+// since the wallet itself is the source of truth for validity, not this regex.
+export const tonAddressSchema = z
+  .string()
+  .regex(/^(-?\d+:[0-9a-fA-F]{64}|[A-Za-z0-9_-]{48})$/, "not a recognizable TON address");
+
+export const walletLinkRequestSchema = z.object({
+  tonAddress: tonAddressSchema.nullable(), // null disconnects
+});
+
+export const walletLinkResponseSchema = z.object({
+  tonAddress: z.string().nullable(),
 });
 
 export type PowerupKind = z.infer<typeof powerupKindSchema>;
@@ -302,3 +322,5 @@ export type ShopInvoiceResponse = z.infer<typeof shopInvoiceResponseSchema>;
 export type LeaderboardQuery = z.infer<typeof leaderboardQuerySchema>;
 export type LeaderboardResponse = z.infer<typeof leaderboardResponseSchema>;
 export type ProfileResponse = z.infer<typeof profileResponseSchema>;
+export type WalletLinkRequest = z.infer<typeof walletLinkRequestSchema>;
+export type WalletLinkResponse = z.infer<typeof walletLinkResponseSchema>;

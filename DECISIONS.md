@@ -968,3 +968,92 @@ dragging a piece onto the board (confirmed via `[data-ghost]` cells
 actually present) and then off it again confirmed the ghost cells vanish
 entirely, and releasing there confirmed the hand and board state are
 completely unchanged (no phantom placement).
+
+# Phase 7 — §14 Gram/TON stub
+
+## "Gram" is a June 2026 rebrand of the token, not a new/different chain
+
+Asked for clarification before building this, since the original brief's
+§14 text wasn't available verbatim after compaction and "Gram" is
+ambiguous (a new internal soft currency? a typo for "Stars"? a TON
+synonym?). The user's answer — "TON is called Gram again now, check the
+latest updates" — was a factual claim about the world, not a design
+preference, so it got verified rather than taken on faith: multiple
+independent sources (AMBCrypto, MEXC, crypto.news, Wikipedia, Yahoo
+Finance) confirm that on June 15 2026, following an 81.22% community vote,
+The Open Network's native token was renamed from Toncoin (TON) back to
+Gram (GRAM) — a pure ticker/branding change. No token swap; holder
+addresses and balances are unchanged. Critically, the network/protocol
+itself keeps the name "The Open Network (TON)" — only the coin's
+user-facing name changed. That's why every place in this codebase that
+talks to the *protocol* still says "TON Connect" (that's the library's
+real, unchanged name), while every place that talks to the *currency* in
+user-facing copy says "Gram" (e.g. the connect button: "Connect wallet for
+future Gram rewards").
+
+## Real TON Connect, not a text field — but address-capture only
+
+The user explicitly asked for "real TON Connect (recommended)" over a fake
+text-input stub. `@tonconnect/ui` is wired as the actual protocol: a
+same-origin `GET /api/tonconnect-manifest.json` (served dynamically from
+`WEBAPP_URL`, since a single Docker image doesn't know its own deployed
+origin at build time) feeds `TonConnectUI`, which mounts the genuine
+QR-code/wallet-list modal and drives the real TON Connect bridge protocol.
+
+What this stub deliberately does **not** do, and why that's still an
+honest reading of "stub":
+- **No `ton_proof` verification server-side.** `POST /api/profile/wallet`
+  persists whatever address the client reports, unverified. Since no
+  funds or payouts flow through this address yet (see next point), a
+  spoofed address can't be used to steal anything — it would just make a
+  future payout (once one exists) go to the wrong place, which is exactly
+  the kind of check that needs adding *before* payouts exist, not before
+  this stub does.
+- **No transactions, no payouts.** This phase only captures and stores an
+  address for future Gram reward payouts described in the brief — it does
+  not send Gram, mint anything, or touch a real ledger.
+- **UI state reflects the live TonConnectUI session, not the server's
+  stored address.** `MainMenu` shows "connected" based on
+  `currentWalletAddress()` (TonConnectUI's own restored session), not
+  `profile.tonAddress`. This is intentional, not an oversight: wallet
+  *control* lives with whatever device actually paired via TON Connect, so
+  showing the server's copy as "connected" on a different device would
+  claim a control the device doesn't have. The server's copy exists purely
+  so a payout system (when built) has somewhere to look up an address —
+  it's not meant to drive this button's state.
+- **Placeholder icon.** `apps/web/public/icon-192.png` is a flat
+  `--nonet-accent`-colored square generated for this stub (no real brand
+  artwork exists yet) — the manifest needs *some* fetchable icon URL, and
+  a solid color is honest about being a placeholder rather than a design
+  attempt. Replace before shipping any real branding push.
+
+## Verified what's actually testable without a real TON wallet
+
+Same constraint as Stars in Phase 5 (no live Telegram client), except here
+there's also no real TON wallet or mobile bridge in this sandbox, so a
+full connect→sign→confirm round trip can't be exercised end-to-end. What
+*was* verified, via headless Chromium against the running dev servers
+(mocked `Telegram.WebApp`, real Postgres, real API):
+- The "Connect wallet" button renders on the main menu with Gram-framed
+  copy (not "TON"/"Toncoin" as a currency name).
+- Clicking it mounts the *real* `TonConnectUI` modal (not a placeholder) —
+  confirmed by screenshot: a genuine QR code with the app's own manifest
+  name/icon watermarked into it, plus the standard wallet list (Wallet in
+  Telegram, Tonkeeper, MyTonWallet, "View all wallets") and "TON Connect"
+  footer branding. The wallets-list registry fetch itself fails in this
+  sandbox (outbound network policy blocks it, same class of restriction
+  hit earlier with `core.telegram.org`) but TonConnectUI degrades
+  gracefully and still renders its bundled wallet shortlist — proving the
+  manifest wiring and library integration are both genuinely live, not
+  mocked.
+- Backend persistence has full integration-test coverage (`POST
+  /api/profile/wallet`, `apps/api/test/profile.test.ts`): rejects without
+  a session token, rejects a malformed address, links and persists across
+  a subsequent `GET /api/profile`, and unlinks via `tonAddress: null`.
+
+Not verified, and not verifiable here: an actual wallet completing the
+pairing handshake, a real `ton_proof`, or any payout — all require a real
+TON wallet/mobile client this environment doesn't have.
+
+113 engine tests, 56 API tests, `tsc --noEmit`, and `vite build` all
+pass/succeed.

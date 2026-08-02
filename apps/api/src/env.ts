@@ -26,6 +26,12 @@ const envSchema = z.object({
   // paid Stars payment. nginx denies /api/internal/* at the edge (see
   // docker/nginx/nginx.conf) so this is defense in depth, not the only guard.
   INTERNAL_API_SECRET: z.string().min(16),
+  // Already required by the bot service for its own "Play NONET" button;
+  // the api service also reads it to serve a same-origin TON Connect
+  // manifest (§14) whose `url`/`iconUrl` must be this deployment's real
+  // public origin. Defaulted (unlike the bot's) since it's a stub feature,
+  // not something worth hard-failing local/CI runs over.
+  WEBAPP_URL: z.string().url().default("http://localhost:5173"),
 });
 
 export type Env = z.infer<typeof envSchema>;

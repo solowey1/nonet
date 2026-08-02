@@ -9,6 +9,7 @@ import {
   type SessionResponse,
   type ShopInvoiceResponse,
   type ShopResponse,
+  type WalletLinkResponse,
   inventoryConsumeResponseSchema,
   leaderboardResponseSchema,
   profileResponseSchema,
@@ -18,6 +19,7 @@ import {
   sessionResponseSchema,
   shopInvoiceResponseSchema,
   shopResponseSchema,
+  walletLinkResponseSchema,
 } from "@nonet/shared";
 
 const API_BASE = "/api";
@@ -124,4 +126,9 @@ export function getLeaderboard(
 
 export function getProfile(sessionToken: string): Promise<ProfileResponse> {
   return getJson("/profile", sessionToken, profileResponseSchema);
+}
+
+/** `tonAddress: null` disconnects the linked wallet (§14 stub — address capture only). */
+export function postWalletLink(sessionToken: string, tonAddress: string | null): Promise<WalletLinkResponse> {
+  return postJson("/profile/wallet", { tonAddress }, sessionToken, walletLinkResponseSchema);
 }

@@ -10,6 +10,7 @@ import { profileRoutes } from "./routes/profile.js";
 import { runRoutes } from "./routes/run.js";
 import { sessionRoutes } from "./routes/session.js";
 import { shopRoutes } from "./routes/shop.js";
+import { tonconnectRoutes } from "./routes/tonconnect.js";
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -28,6 +29,7 @@ export function buildApp(): FastifyInstance {
   app.register(internalRoutes);
   app.register(leaderboardRoutes);
   app.register(profileRoutes);
+  app.register(tonconnectRoutes);
 
   app.get("/api/healthz", async () => ({ ok: true }));
 
