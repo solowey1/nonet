@@ -5,10 +5,23 @@
   padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 6px;
 }
 
+.scores {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+}
+
 .score {
   font-size: 1.6rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.bestScore {
+  font-size: 1.1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--nonet-text-dim);
 }
 
 .label {

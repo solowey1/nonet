@@ -2,7 +2,7 @@ import { profileResponseSchema } from "@nonet/shared";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/client.js";
-import { runs } from "../db/schema.js";
+import { dailyStats, runs } from "../db/schema.js";
 
 export async function profileRoutes(app: FastifyInstance) {
   app.get("/api/profile", { preHandler: app.authenticate }, async (request, reply) => {
@@ -24,8 +24,14 @@ export async function profileRoutes(app: FastifyInstance) {
       .orderBy(desc(runs.score))
       .limit(1);
 
-    // Streaks/daily gifts aren't wired up yet — that's economy work (§19 step 5).
-    const streak = 0;
+    // Today's dailyStats row (created by grantDailyGiftIfNeeded on /api/session)
+    // already carries the current consecutive-days streak (§8).
+    const today = new Date().toISOString().slice(0, 10);
+    const [todayStats] = await db
+      .select({ streak: dailyStats.streak })
+      .from(dailyStats)
+      .where(and(eq(dailyStats.userId, userId), eq(dailyStats.day, today)));
+    const streak = todayStats?.streak ?? 0;
 
     return reply.send(
       profileResponseSchema.parse({

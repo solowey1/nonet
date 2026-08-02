@@ -11,9 +11,10 @@ import {
   type Board,
   type GameState,
 } from "@nonet/engine";
-import type { Action as SharedAction, PowerupKind } from "@nonet/shared";
+import type { Action as SharedAction, PowerupKind, ProfileResponse } from "@nonet/shared";
 import {
   ApiError,
+  getProfile,
   postDevSession,
   postInventoryConsume,
   postRunCheckpoint,
@@ -21,6 +22,7 @@ import {
   postRunStart,
   postSession,
   postShopInvoice,
+  sendCheckpointBeacon,
 } from "../api/client.js";
 import { bootstrapTelegramWebApp, getTelegramInitData, openInvoice, setClosingConfirmation } from "../telegram/webapp.js";
 import { maskToCells } from "../utils/bitmask.js";
@@ -67,9 +69,13 @@ export type ConsumeFailureReason = "insufficient_inventory" | "region_too_large"
 /** `cancelled`/`pending` mirror Telegram's own openInvoice statuses (§13); `failed` also covers no-WebApp/network cases. */
 export type ReviveOutcome = "purchased" | "cancelled" | "pending" | "failed";
 
+/** The main menu is the landing screen (§19 step 6) — bootstrap never auto-starts or auto-resumes into a run. */
+export type Screen = "menu" | "game";
+
 interface GameStoreState {
   readonly bootStatus: BootStatus;
   readonly bootError: string | null;
+  readonly screen: Screen;
 
   readonly sessionToken: string | null;
   readonly runId: string | null;
@@ -84,6 +90,7 @@ interface GameStoreState {
   readonly armedPowerup: PowerupKind | null;
   readonly finishResult: FinishResult | null;
   readonly revivePending: boolean;
+  readonly profile: ProfileResponse | null;
 
   bootstrap(): Promise<void>;
   place(slot: 0 | 1 | 2, row: number, col: number): boolean;
@@ -95,7 +102,10 @@ interface GameStoreState {
   applyFillPowerup(row: number, col: number): Promise<{ ok: boolean; reason?: ConsumeFailureReason; regionSize?: number }>;
   buyRevive(): Promise<ReviveOutcome>;
   refreshInventory(): Promise<void>;
+  loadProfile(): Promise<void>;
   newRun(): Promise<void>;
+  continueRun(): void;
+  goToMenu(): void;
 }
 
 let clearEventCounter = 0;
@@ -157,6 +167,7 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     try {
       const result = await postRunFinish(runToken, runId, actionLog);
       set({ finishResult: { score: result.score, verified: result.verified, rank: result.rank } });
+      if (result.verified) void get().loadProfile(); // best score may have just changed
     } catch (err) {
       console.error("run/finish failed — local score still stands, just unranked", err);
       set({ finishResult: { score: game.score, verified: false, rank: null } });
@@ -244,6 +255,7 @@ export const useGameStore = create<GameStoreState>((set, get) => {
   return {
     bootStatus: "loading",
     bootError: null,
+    screen: "menu",
 
     sessionToken: null,
     runId: null,
@@ -258,6 +270,7 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     armedPowerup: null,
     finishResult: null,
     revivePending: false,
+    profile: null,
 
     async bootstrap() {
       bootstrapTelegramWebApp();
@@ -273,33 +286,38 @@ export const useGameStore = create<GameStoreState>((set, get) => {
 
         set({ sessionToken: session.token, inventory: session.inventory });
 
+        // The main menu is always the landing screen (§19 step 6) — a
+        // resumed run is loaded into the store so "Continue" is available,
+        // but entering it is the player's own choice, not automatic. With no
+        // resumable run, runId/game are simply left at their initial blank
+        // state and the menu offers "Play" instead.
         if (session.activeRun) {
           const { runId, seedHex, actions, runToken } = session.activeRun;
           let state = createInitialState(hexToBytes(seedHex));
           try {
             for (const action of actions) state = reduce(state, action);
+            set({
+              runId,
+              runToken,
+              actionLog: actions,
+              checkpointedCount: actions.length,
+              game: state,
+              cellFamilies: freshCellFamilies(), // cosmetic only — see DECISIONS.md
+              lastClear: null,
+              finishResult: null,
+            });
+            setClosingConfirmation(true);
           } catch (err) {
-            console.error("failed to replay the resumed run locally — starting a fresh run instead", err);
-            await startFreshRun(session.token);
-            set({ bootStatus: "ready" });
-            return;
+            // Corrupted/incompatible resumed log — fall through with no
+            // active run rather than silently starting a new one behind the
+            // player's back; the menu's "Play" button covers this the same
+            // as a genuinely fresh user.
+            console.error("failed to replay the resumed run locally — discarding it", err);
           }
-          set({
-            runId,
-            runToken,
-            actionLog: actions,
-            checkpointedCount: actions.length,
-            game: state,
-            cellFamilies: freshCellFamilies(), // cosmetic only — see DECISIONS.md
-            lastClear: null,
-            finishResult: null,
-          });
-        } else {
-          await startFreshRun(session.token);
         }
 
-        setClosingConfirmation(true);
         set({ bootStatus: "ready" });
+        void get().loadProfile(); // best score for the HUD — non-critical, doesn't block boot
       } catch (err) {
         console.error("bootstrap failed", err);
         const message = err instanceof ApiError ? `API error ${err.status}` : (err as Error).message;
@@ -467,6 +485,17 @@ export const useGameStore = create<GameStoreState>((set, get) => {
       }
     },
 
+    async loadProfile() {
+      const { sessionToken } = get();
+      if (!sessionToken) return;
+      try {
+        const profile = await getProfile(sessionToken);
+        set({ profile });
+      } catch (err) {
+        console.error("failed to load profile", err); // best score just doesn't show — not fatal
+      }
+    },
+
     async newRun() {
       const { sessionToken, game } = get();
       if (!sessionToken) return;
@@ -474,6 +503,42 @@ export const useGameStore = create<GameStoreState>((set, get) => {
       // move on without reviving, so the run is really over now.
       if (game.status === "gameover") void finishRun();
       await startFreshRun(sessionToken);
+      setClosingConfirmation(true);
+      set({ screen: "game" });
+    },
+
+    continueRun() {
+      // No network call — a resumed run is already loaded into the store by
+      // bootstrap(); this just switches which screen is showing.
+      setClosingConfirmation(true);
+      set({ screen: "game" });
+    },
+
+    goToMenu() {
+      set({ screen: "menu" });
     },
   };
 });
+
+/**
+ * The periodic every-25-actions checkpoint (see maybeCheckpoint above) is
+ * fine for the normal case, but a naive Telegram-close mid-session — the
+ * scenario the user actually complained about — can easily land between two
+ * of those. `visibilitychange`/`pagehide` are the standard signal for "the
+ * app is being backgrounded or torn down"; there's no Telegram-specific
+ * "about to close" hook to prefer over them. Registered once at module load
+ * (not per-component-mount) since this is a single global concern, not tied
+ * to any particular component's lifecycle.
+ */
+if (typeof document !== "undefined") {
+  const forceCheckpointIfDirty = () => {
+    const { runId, runToken, actionLog, checkpointedCount } = useGameStore.getState();
+    if (!runId || !runToken) return;
+    if (actionLog.length <= checkpointedCount) return; // already covered by the last checkpoint/finish
+    sendCheckpointBeacon(runToken, runId, actionLog);
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) forceCheckpointIfDirty();
+  });
+  window.addEventListener("pagehide", forceCheckpointIfDirty);
+}

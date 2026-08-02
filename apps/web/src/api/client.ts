@@ -1,13 +1,17 @@
 import {
   type Action,
   type InventoryConsumeResponse,
+  type LeaderboardResponse,
   type PowerupKind,
+  type ProfileResponse,
   type RunFinishResponse,
   type RunStartResponse,
   type SessionResponse,
   type ShopInvoiceResponse,
   type ShopResponse,
   inventoryConsumeResponseSchema,
+  leaderboardResponseSchema,
+  profileResponseSchema,
   runCheckpointResponseSchema,
   runFinishResponseSchema,
   runStartResponseSchema,
@@ -69,6 +73,24 @@ export async function postRunCheckpoint(runToken: string, runId: string, actions
   await postJson("/run/checkpoint", { runId, actions }, runToken, runCheckpointResponseSchema);
 }
 
+/**
+ * Best-effort checkpoint fired when the app is about to close or background
+ * (see gameStore's visibilitychange/pagehide wiring). `keepalive` lets the
+ * browser finish the request even after this page itself is torn down —
+ * unlike `navigator.sendBeacon`, `fetch` with `keepalive` still supports the
+ * `Authorization` header the run-token auth needs, so no server-side change
+ * was needed to add this. Fire-and-forget: there's nothing left to react to
+ * a response (or a failure) once the app is already closing.
+ */
+export function sendCheckpointBeacon(runToken: string, runId: string, actions: readonly Action[]): void {
+  fetch(`${API_BASE}/run/checkpoint`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${runToken}` },
+    body: JSON.stringify({ runId, actions }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
 export function postRunFinish(runToken: string, runId: string, actions: readonly Action[]): Promise<RunFinishResponse> {
   return postJson("/run/finish", { runId, actions }, runToken, runFinishResponseSchema);
 }
@@ -87,4 +109,19 @@ export function getShop(): Promise<ShopResponse> {
 
 export function postShopInvoice(sessionToken: string, sku: string, runId?: string): Promise<ShopInvoiceResponse> {
   return postJson("/shop/invoice", runId ? { sku, runId } : { sku }, sessionToken, shopInvoiceResponseSchema);
+}
+
+export function getLeaderboard(
+  params: { scope?: "daily" | "weekly" | "all_time"; pure?: boolean },
+  sessionToken: string | null,
+): Promise<LeaderboardResponse> {
+  const query = new URLSearchParams();
+  if (params.scope) query.set("scope", params.scope);
+  if (params.pure) query.set("pure", "true");
+  const qs = query.toString();
+  return getJson(`/leaderboard${qs ? `?${qs}` : ""}`, sessionToken, leaderboardResponseSchema);
+}
+
+export function getProfile(sessionToken: string): Promise<ProfileResponse> {
+  return getJson("/profile", sessionToken, profileResponseSchema);
 }

@@ -631,3 +631,127 @@ API integration tests across 7 files (shop, internal payment webhook
 idempotency + crediting, milestone drops, a full paid-revive-through-
 `run/finish` flow, and a rejected-unpaid-revive-token case) plus the
 existing 111 engine tests all pass.
+
+# Post-Phase-5 fixes (pre-step-6 polish, user-reported)
+
+Before starting §19 step 6 ("polish"), the user reported five concrete
+problems from actually playing the deployed app. All five turned out to be
+real, addressable gaps rather than matters of taste, so they're fixed here
+rather than folded into step 6's own (separate, still-open) polish pass.
+
+## The board "jumped" because the hand tray's height depended on which pieces were dealt
+
+`PieceView` sizes its root element to the actual piece (`w`/`h` in cells),
+so a taller piece (a 5-cell line, say) made `HandTray`'s slot — and so the
+whole tray — taller than a hand of small pieces did. Since `App.tsx`'s
+column layout gives the board a `flex: 1` region between the fixed-height
+score HUD and the tray, a tray that changes height every time a new hand is
+dealt reflows that middle region, visibly shifting the board's vertical
+position. Fixed by reserving a `min-height` on `.tray` equal to the
+catalogue's tallest possible piece dimension (`MAX_PIECE_DIM`, computed
+once from `PIECE_CATALOGUE` rather than hardcoded, so it can't silently go
+stale if pieces are added later) times the tray's per-cell scale — the tray
+is now always at least as tall as its tallest possible content, regardless
+of which specific hand is showing. Verified by scripting 29 real
+placements (spanning ~10 hand deals) through headless Chromium and
+confirming the board's bounding rect never moved by a single pixel.
+
+## Difficulty didn't actually escalate at high score — the "hard" tier's requirement was being quietly undercut by its own weighting
+
+`deal.ts` already had a three-tier solvability requirement (§5): gentle
+guarantees all 3 dealt pieces are placeable, normal guarantees 2, hard
+guarantees only 1. That's a real difficulty knob — a hand with
+`maxPlaceable() <= 1` on a crowded board means the *other* two pieces are
+provably unplaceable regardless of order, which (since a fresh hand is only
+dealt once all 3 slots are empty) can end the run right after the next
+placement. But `adaptiveWeight`'s separate crowded-board protection (nerf
+large pieces' draw odds once the board is >60% full) applied at *full
+strength regardless of tier* — so a crowded board almost never actually
+drew the large piece that would make a low-requirement hand truly
+dangerous, and "hard" rarely produced a hand riskier than "gentle" in
+practice. Fixed by scaling that protection down with tier, and — because
+simulation showed the rare 5-cell pieces alone are too sparse in the
+catalogue to noticeably shift the drawn distribution — by making `hard`
+actively *invert* the effect (boost, not just stop protecting, both the
+rare 5-cell and the much more common 4-cell pieces) rather than merely
+removing gentle's protection.
+
+Verified empirically, not just by intent: a script sweeping `dealHand`
+across thousands of trials at a fixed 0.68 board fill showed the
+"immediately fatal" hand rate (`maxPlaceable <= 1`) at hard tier moving from
+0% (gentle, unchanged) and ~3.6% (hard, before this change) to ~5.2% (hard,
+after) — a real, measurable increase, not just a plausible-sounding
+rationale. Two new engine tests pin the *direction* of this (large pieces
+must be favoured, not penalised, at hard tier; a crowded board must deal a
+large piece meaningfully more often at hard than at gentle) without pinning
+an exact ratio, so future weight retuning doesn't make the tests brittle.
+
+## Leaderboard and profile screens: the backend already existed, the frontend never called it
+
+`GET /api/leaderboard` and `GET /api/profile` have existed since Phase 3
+with zero UI. Added `LeaderboardScreen.tsx` (tabs: global rankings with a
+scope selector + "pure only" toggle, and a "My Stats" tab reading
+`/api/profile`), plus a live "Best" figure next to the score during play
+(`gameStore.loadProfile()`, refreshed after boot and after every verified
+`run/finish`) so there's something to chase mid-run, not just at game over.
+While wiring "My Stats" up, found `profile.ts`'s `streak` field was still
+hardcoded to `0` with a stale "not wired up yet" comment from Phase 3 — the
+economy work in Phase 5 (`dailyStats`, `grantDailyGiftIfNeeded`) already
+tracks a real per-day streak that `/api/profile` just wasn't reading. Fixed
+to read today's `dailyStats` row, with a new `profile.test.ts` (previously
+this route had zero test coverage) covering the zeroed/no-history case, the
+real streak value, and stats picking up a verified run.
+
+## Progress lost on close: periodic checkpointing left a real gap for a naive close
+
+The existing every-25-actions checkpoint is fine for the steady state, but
+a player closing Telegram mid-session lands in the gap between checkpoints
+far more easily than the "every 25 actions" cadence suggests — the user's
+report ("progress is lost when I close the app") was a real gap, not a
+misunderstanding of the existing checkpointing. Added a `visibilitychange`
+(`document.hidden`) / `pagehide` listener, registered once at module load
+(a single global browser-lifecycle concern, not tied to any component's
+mount), that force-checkpoints immediately regardless of the 25-action
+threshold. The request uses `fetch(..., { keepalive: true })` rather than
+`navigator.sendBeacon` — `sendBeacon` can't attach the `Authorization`
+header the run-token auth requires, while `fetch`'s `keepalive` flag gets
+the same "survive page teardown" guarantee while keeping normal headers, so
+no server-side change was needed. Verified end-to-end (not just "the
+listener fired"): placed one piece (under the periodic threshold), forced
+`document.hidden = true` + dispatched `visibilitychange` from Playwright,
+and confirmed both the checkpoint request's 200 response and — checked
+directly against Postgres — that the run row's `actions` array in the
+database actually contains that one placement.
+
+## Added a main menu — bootstrap no longer auto-starts or auto-resumes into a run
+
+Previously `bootstrap()` either resumed an in-progress run or minted a
+brand new one automatically, landing the player straight on the board every
+time. The user asked for an explicit menu they land on instead, from which
+they choose to continue or start fresh, check the leaderboard/their own
+stats, or check their power-up counts and buy more — all of which already
+existed as components (`LeaderboardScreen`, `ShopOverlay`) or data
+(`inventory`) with no single home screen tying them together. Added a
+`screen: "menu" | "game"` field to the store; `bootstrap()` still loads a
+resumable run into the store (so "Continue" has something to resume) but
+never flips `screen` to `"game"` itself — that's now only ever a deliberate
+`continueRun()`/`newRun()` call from `MainMenu`, or the in-game "🏠" button
+back the other way. A run that's merely *loaded* (not yet entered) doesn't
+enable Telegram's closing confirmation either — that only turns on once the
+player actually enters a run, matching "nothing to lose yet" while sitting
+on the menu. `MainMenu` also surfaces the same power-up counts as the
+in-game inventory bar (read-only) so "how many upgrades do I have" doesn't
+require actually starting a run to check.
+
+## Verified end to end: fresh menu → play → checkpoint → return → continue
+
+Scripted through headless Chromium: a brand-new session lands on the menu
+showing "Play" (no resumable run) with real inventory counts and working
+Leaderboard/Shop buttons; tapping Play enters the game with a genuinely
+fresh `runId`; placing pieces updates the score; tapping "🏠" returns to the
+menu, which now shows "Continue" (plus a "start a new game instead"
+fallback) instead of "Play"; tapping Continue re-enters the *same* run with
+the *same* score, entirely from client-side state with no network round
+trip. 113 engine tests (111 + 2 new) and 51 API tests (48 + 3 new, covering
+the profile streak fix) all pass; both `tsc --noEmit` and `vite build`
+stay clean across every workspace package.

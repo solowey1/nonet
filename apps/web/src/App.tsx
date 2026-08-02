@@ -6,6 +6,7 @@ import { DragLayer } from "./components/DragLayer.js";
 import { GameOverOverlay } from "./components/GameOverOverlay.js";
 import { HandTray } from "./components/HandTray.js";
 import { InventoryBar } from "./components/InventoryBar.js";
+import { MainMenu } from "./components/MainMenu.js";
 import { RocketGutters } from "./components/RocketGutters.js";
 import { ScoreHud } from "./components/ScoreHud.js";
 import { ShopOverlay } from "./components/ShopOverlay.js";
@@ -20,6 +21,7 @@ export function App() {
   const bootStatus = useGameStore((s) => s.bootStatus);
   const bootError = useGameStore((s) => s.bootError);
   const bootstrap = useGameStore((s) => s.bootstrap);
+  const screen = useGameStore((s) => s.screen);
 
   useEffect(() => {
     void bootstrap();
@@ -47,7 +49,7 @@ export function App() {
     );
   }
 
-  return <Game boardRef={boardRef} />;
+  return screen === "menu" ? <MainMenu /> : <Game boardRef={boardRef} />;
 }
 
 function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }) {
@@ -59,11 +61,13 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
   const finishResult = useGameStore((s) => s.finishResult);
   const revivePending = useGameStore((s) => s.revivePending);
   const sessionToken = useGameStore((s) => s.sessionToken);
+  const profile = useGameStore((s) => s.profile);
   const armPowerup = useGameStore((s) => s.armPowerup);
   const applyRocket = useGameStore((s) => s.applyRocket);
   const buyRevive = useGameStore((s) => s.buyRevive);
   const refreshInventory = useGameStore((s) => s.refreshInventory);
   const newRun = useGameStore((s) => s.newRun);
+  const goToMenu = useGameStore((s) => s.goToMenu);
 
   const [hint, setHint] = useState<string | null>(null);
   const [shopOpen, setShopOpen] = useState(false);
@@ -114,7 +118,16 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
   return (
     <div className={styles.app}>
       <div className={styles.hudRow}>
-        <ScoreHud score={game.score} comboLevel={game.comboLevel} />
+        <ScoreHud
+          score={game.score}
+          comboLevel={game.comboLevel}
+          bestScore={
+            profile?.bestRun ? Math.max(profile.bestRun.score, game.score) : game.score > 0 ? game.score : null
+          }
+        />
+        <button type="button" className={styles.shopButton} onClick={goToMenu} aria-label="Back to menu">
+          🏠
+        </button>
         <button type="button" className={styles.shopButton} onClick={() => setShopOpen(true)}>
           🛍 Shop
         </button>
