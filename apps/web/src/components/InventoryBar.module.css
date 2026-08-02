@@ -5,6 +5,15 @@
   padding: 4px 8px;
 }
 
+/* Landscape: a row of 5 icons doesn't fit the narrow right column (see
+   App.module.css) — wrap instead of forcing the column wider. */
+@media (orientation: landscape) {
+  .bar {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
 .slot {
   position: relative;
   display: flex;

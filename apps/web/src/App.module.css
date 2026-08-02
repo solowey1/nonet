@@ -5,6 +5,8 @@
   flex-direction: column;
   max-width: 480px;
   margin: 0 auto;
+  padding-left: var(--nonet-safe-left);
+  padding-right: var(--nonet-safe-right);
 }
 
 .hudRow {
@@ -17,6 +19,10 @@
 }
 
 .shopButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: 36px;
   margin-right: 12px;
   padding: 6px 14px;
@@ -41,6 +47,84 @@
   flex-shrink: 0;
 }
 
+.scoreArea {
+  min-width: 0;
+}
+
+.controlsArea {
+  display: flex;
+  align-items: center;
+}
+
+.inventoryArea {
+  min-width: 0;
+}
+
+/*
+ * Landscape (§12 request): board centered, score+hints on the left, the hand
+ * tray+controls on the right — a 3-column grid replaces the portrait flex
+ * column. `.hudRow` (score+controls, one row in portrait) switches to
+ * `display: contents` so its two children can be placed independently on
+ * opposite sides without duplicating either subtree; `board` spans all 3
+ * rows so it can center itself vertically across the whole height.
+ */
+@media (orientation: landscape) {
+  .app {
+    display: grid;
+    grid-template-columns: minmax(110px, 190px) 1fr minmax(110px, 190px);
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas:
+      "score board controls"
+      "hint board inventory"
+      "hint board tray";
+    align-items: stretch;
+    max-width: none;
+    margin: 0;
+    gap: 4px 8px;
+  }
+
+  .hudRow {
+    display: contents;
+  }
+
+  .hudRow > :first-child {
+    flex: initial;
+  }
+
+  .scoreArea {
+    grid-area: score;
+  }
+
+  .controlsArea {
+    grid-area: controls;
+    justify-content: flex-end;
+    padding-top: calc(10px + var(--nonet-safe-top));
+  }
+
+  .inventoryArea {
+    grid-area: inventory;
+    display: flex;
+    align-items: flex-start;
+  }
+
+  .hint {
+    grid-area: hint;
+    text-align: left;
+    padding: 4px 4px 4px 12px;
+  }
+
+  .boardWrap {
+    grid-area: board;
+    padding: 8px 4px;
+  }
+
+  .trayWrap {
+    grid-area: tray;
+    display: flex;
+    align-items: flex-end;
+  }
+}
+
 .boot {
   height: 100%;
   display: flex;
@@ -48,7 +132,8 @@
   align-items: center;
   justify-content: center;
   gap: 12px;
-  padding: 24px;
+  padding: calc(24px + var(--nonet-safe-top)) calc(24px + var(--nonet-safe-right)) calc(24px + var(--nonet-safe-bottom))
+    calc(24px + var(--nonet-safe-left));
   text-align: center;
   color: var(--nonet-text-dim);
 }
@@ -69,7 +154,12 @@
 }
 
 .hint {
-  min-height: 1.2em;
+  /* Fixed (not min-) height: the message can wrap to 2 lines on a narrow
+     viewport, and a min-height only sets a floor — it doesn't stop the box
+     from growing past it and pushing the board down. A fixed height with
+     clipped overflow can never grow no matter how the text wraps. */
+  height: 2.4em;
+  overflow: hidden;
   text-align: center;
   font-size: 0.8rem;
   color: var(--nonet-danger);

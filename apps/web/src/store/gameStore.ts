@@ -24,7 +24,14 @@ import {
   postShopInvoice,
   sendCheckpointBeacon,
 } from "../api/client.js";
-import { bootstrapTelegramWebApp, getTelegramInitData, openInvoice, setClosingConfirmation } from "../telegram/webapp.js";
+import {
+  bootstrapTelegramWebApp,
+  getTelegramInitData,
+  hapticImpact,
+  hapticNotification,
+  openInvoice,
+  setClosingConfirmation,
+} from "../telegram/webapp.js";
 import { maskToCells } from "../utils/bitmask.js";
 import { getOrCreateDevUserId } from "../utils/devUser.js";
 import { hexToBytes } from "../utils/hex.js";
@@ -69,8 +76,13 @@ export type ConsumeFailureReason = "insufficient_inventory" | "region_too_large"
 /** `cancelled`/`pending` mirror Telegram's own openInvoice statuses (§13); `failed` also covers no-WebApp/network cases. */
 export type ReviveOutcome = "purchased" | "cancelled" | "pending" | "failed";
 
-/** The main menu is the landing screen (§19 step 6) — bootstrap never auto-starts or auto-resumes into a run. */
-export type Screen = "menu" | "game";
+/**
+ * The main menu is the landing screen (§19 step 6) — bootstrap never
+ * auto-starts or auto-resumes into a run. Every non-menu screen is exactly
+ * one level deep (reached only from the menu), so "back" from any of them
+ * always means "menu" — a flat graph, not a generic stack/router.
+ */
+export type Screen = "menu" | "game" | "leaderboard" | "shop" | "settings";
 
 interface GameStoreState {
   readonly bootStatus: BootStatus;
@@ -106,6 +118,9 @@ interface GameStoreState {
   newRun(): Promise<void>;
   continueRun(): void;
   goToMenu(): void;
+  goToLeaderboard(): void;
+  goToShop(): void;
+  goToSettings(): void;
 }
 
 let clearEventCounter = 0;
@@ -141,16 +156,22 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     });
   }
 
-  async function maybeCheckpoint(actionLog: SharedAction[]) {
-    const { runId, runToken, checkpointedCount } = get();
-    if (!runId || !runToken) return;
-    if (actionLog.length - checkpointedCount < CHECKPOINT_EVERY_N_ACTIONS) return;
+  /** Ignores the periodic threshold — used wherever progress must be saved *now* (e.g. leaving the game screen via Back). */
+  async function forceCheckpoint() {
+    const { runId, runToken, actionLog, checkpointedCount } = get();
+    if (!runId || !runToken || actionLog.length <= checkpointedCount) return;
     try {
       await postRunCheckpoint(runToken, runId, actionLog);
       set({ checkpointedCount: actionLog.length });
     } catch (err) {
-      console.error("checkpoint failed (non-fatal, will retry on the next threshold)", err);
+      console.error("checkpoint failed (non-fatal, will retry on the next threshold/back/close)", err);
     }
+  }
+
+  async function maybeCheckpoint() {
+    const { runId, actionLog, checkpointedCount } = get();
+    if (!runId || actionLog.length - checkpointedCount < CHECKPOINT_EVERY_N_ACTIONS) return;
+    await forceCheckpoint();
   }
 
   // Deliberately not triggered the instant `game.status` flips to "gameover"
@@ -241,7 +262,12 @@ export const useGameStore = create<GameStoreState>((set, get) => {
           : null,
     });
 
-    void maybeCheckpoint(nextActionLog);
+    if (next.status === "gameover") hapticNotification("error");
+    else if (isPerfectClear) hapticNotification("success");
+    else if (clearedMask !== 0n) hapticImpact("medium");
+    else hapticImpact("light");
+
+    void maybeCheckpoint();
     return true;
   }
 
@@ -273,7 +299,7 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     profile: null,
 
     async bootstrap() {
-      bootstrapTelegramWebApp();
+      await bootstrapTelegramWebApp();
       try {
         const initData = getTelegramInitData();
         const session = initData
@@ -375,7 +401,15 @@ export const useGameStore = create<GameStoreState>((set, get) => {
             : null,
       });
 
-      void maybeCheckpoint(nextActionLog);
+      // §12 haptics: scale with what actually happened this turn, so a plain
+      // placement, a line clear, a perfect clear, and running out of moves
+      // each have a distinctly different feel rather than one generic buzz.
+      if (next.status === "gameover") hapticNotification("error");
+      else if (isPerfectClear) hapticNotification("success");
+      else if (preview.unitsCleared > 0) hapticImpact("medium");
+      else hapticImpact("light");
+
+      void maybeCheckpoint();
       return true;
     },
 
@@ -459,7 +493,8 @@ export const useGameStore = create<GameStoreState>((set, get) => {
           finishResult: null,
         });
         setClosingConfirmation(true);
-        void maybeCheckpoint(nextActionLog);
+        hapticNotification("success");
+        void maybeCheckpoint();
         return "purchased";
       } finally {
         set({ revivePending: false });
@@ -515,7 +550,26 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     },
 
     goToMenu() {
+      // Leaving the game screen — via the native BackButton or the in-game
+      // Home button, both route through here — must save progress right
+      // away, not just wait for the next periodic checkpoint (§19: "Back"
+      // saves the run same as closing the app does). Fire-and-forget: the
+      // visibilitychange/pagehide safety net still covers a real app close
+      // regardless of whether this particular request succeeds.
+      if (get().screen === "game") void forceCheckpoint();
       set({ screen: "menu" });
+    },
+
+    goToLeaderboard() {
+      set({ screen: "leaderboard" });
+    },
+
+    goToShop() {
+      set({ screen: "shop" });
+    },
+
+    goToSettings() {
+      set({ screen: "settings" });
     },
   };
 });

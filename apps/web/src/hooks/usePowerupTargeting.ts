@@ -26,6 +26,12 @@ export function usePowerupTargeting(boardRef: RefObject<HTMLDivElement | null>) 
         if (!boardEl) return null;
         const board = useGameStore.getState().game.board;
         const rect = boardEl.getBoundingClientRect();
+        // Same rule as piece placement (useDragPlacement): clamping below
+        // keeps a cell in-grid near an edge, but without this check it also
+        // clamps a pointer that's left the board entirely onto some in-bounds
+        // cell — no preview, no commit, once the pointer itself is outside.
+        if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return null;
+
         const { row: fRow, col: fCol } = pointToFractionalCell(rect, x, y);
         const row = Math.floor(clamp(fRow, 0, BOARD_SIZE - 1));
         const col = Math.floor(clamp(fCol, 0, BOARD_SIZE - 1));

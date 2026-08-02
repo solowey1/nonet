@@ -5,7 +5,8 @@
   align-items: center;
   justify-content: center;
   gap: 14px;
-  padding: 24px;
+  padding: calc(24px + var(--nonet-safe-top)) calc(24px + var(--nonet-safe-right)) calc(24px + var(--nonet-safe-bottom))
+    calc(24px + var(--nonet-safe-left));
   max-width: 480px;
   margin: 0 auto;
   position: relative;
@@ -38,40 +39,11 @@
   font-variant-numeric: tabular-nums;
 }
 
-.primary {
-  min-height: 52px;
-  width: 100%;
-  max-width: 280px;
-  padding: 12px 24px;
-  border-radius: var(--nonet-radius);
-  border: none;
-  background: var(--nonet-accent);
-  color: #0b0e13;
-  font-weight: 700;
-  font-size: 1.1rem;
-  cursor: pointer;
-}
-
-.primary:active {
-  transform: scale(0.98);
-}
-
-.secondaryText {
-  min-height: 32px;
-  border: none;
-  background: transparent;
-  color: var(--nonet-text-dim);
-  font-size: 0.8rem;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
 .inventoryStrip {
   display: flex;
   justify-content: center;
   gap: 8px;
   padding: 8px;
-  margin-top: 10px;
 }
 
 .invSlot {
@@ -84,7 +56,6 @@
   padding: 6px;
   border-radius: var(--nonet-radius);
   background: var(--nonet-cell-empty);
-  font-size: 1.2rem;
 }
 
 .invCount {
@@ -93,19 +64,42 @@
   color: var(--nonet-text-dim);
 }
 
-.actions {
+.list {
   display: flex;
-  gap: 10px;
-  margin-top: 8px;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 320px;
+  margin-top: 6px;
 }
 
-.actionButton {
-  min-height: 44px;
-  padding: 10px 18px;
+.listItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  width: 100%;
+  padding: 12px 20px;
   border-radius: var(--nonet-radius);
-  border: 1px solid color-mix(in srgb, var(--nonet-text) 20%, transparent);
-  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--nonet-text) 14%, transparent);
+  background: var(--nonet-cell-empty);
   color: var(--nonet-text);
-  font-size: 0.9rem;
+  font-weight: 600;
+  font-size: 1rem;
   cursor: pointer;
+}
+
+.listItem:active {
+  transform: scale(0.98);
+}
+
+.listItem:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.listItem[data-primary="true"] {
+  background: var(--nonet-accent);
+  border-color: transparent;
+  color: #0b0e13;
 }

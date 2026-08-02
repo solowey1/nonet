@@ -1,21 +1,26 @@
 import { useEffect, useState } from "react";
-import type { Sku } from "@nonet/shared";
+import { ArrowLeft, Check, Star } from "lucide-react";
+import { PREMIUM_THEMES, themeInventoryKey, type Sku } from "@nonet/shared";
 import { getShop, postShopInvoice } from "../api/client.js";
 import { openInvoice } from "../telegram/webapp.js";
+import { POWERUP_ICON } from "../utils/powerupIcon.js";
 import styles from "./ShopOverlay.module.css";
 
-const ITEM_EMOJI: Record<string, string> = {
-  pencil: "✏️",
-  eraser: "🧹",
-  rocket: "🚀",
-  bomb: "💣",
-  fill: "🪣",
-};
-
-function contentsLabel(contents: Record<string, number>): string {
-  return Object.entries(contents)
-    .map(([item, qty]) => `${ITEM_EMOJI[item] ?? item} x${qty}`)
-    .join("  ");
+function ContentsLine({ contents }: { contents: Record<string, number> }) {
+  const entries = Object.entries(contents).filter(([item]) => !item.startsWith("theme_"));
+  if (entries.length === 0) return null;
+  return (
+    <div className={styles.itemContents}>
+      {entries.map(([item, qty]) => {
+        const Icon = (POWERUP_ICON as Partial<Record<string, (typeof POWERUP_ICON)["pencil"]>>)[item];
+        return (
+          <span key={item} className={styles.contentChip}>
+            {Icon ? <Icon size={14} aria-hidden="true" /> : item} x{qty}
+          </span>
+        );
+      })}
+    </div>
+  );
 }
 
 interface ShopOverlayProps {
@@ -68,21 +73,25 @@ export function ShopOverlay({ sessionToken, onClose, onPurchased }: ShopOverlayP
   return (
     <div className={styles.overlay} role="dialog" aria-label="Shop">
       <div className={styles.header}>
-        <span className={styles.title}>Shop</span>
-        <button type="button" className={styles.close} aria-label="Close shop" onClick={onClose}>
-          ✕
+        <button type="button" className={styles.close} aria-label="Back" onClick={onClose}>
+          <ArrowLeft size={20} aria-hidden="true" />
         </button>
+        <span className={styles.title}>Shop</span>
       </div>
       <div className={styles.list}>
         {loadError && <div className={styles.error}>{loadError}</div>}
         {!skus && !loadError && <div className={styles.loading}>Loading…</div>}
         {skus?.map((sku) => {
           const state = purchase?.sku === sku.sku ? purchase.status : null;
+          const theme = PREMIUM_THEMES.find((t) => sku.sku === themeInventoryKey(t.id));
           return (
             <div key={sku.sku} className={styles.item}>
+              {theme && (
+                <span className={styles.themeSwatch} style={{ background: theme.palette.accent }} aria-hidden="true" />
+              )}
               <div className={styles.itemInfo}>
                 <div className={styles.itemTitle}>{sku.title}</div>
-                <div className={styles.itemContents}>{contentsLabel(sku.contents)}</div>
+                {theme ? <div className={styles.itemContents}>{theme.description}</div> : <ContentsLine contents={sku.contents} />}
               </div>
               <button
                 type="button"
@@ -90,7 +99,17 @@ export function ShopOverlay({ sessionToken, onClose, onPurchased }: ShopOverlayP
                 disabled={state === "buying"}
                 onClick={() => void buy(sku)}
               >
-                {state === "buying" ? "…" : state === "done" ? "✓ Bought" : `⭐ ${sku.starsAmount}`}
+                {state === "buying" ? (
+                  "…"
+                ) : state === "done" ? (
+                  <>
+                    <Check size={16} aria-hidden="true" /> Bought
+                  </>
+                ) : (
+                  <>
+                    <Star size={14} aria-hidden="true" /> {sku.starsAmount}
+                  </>
+                )}
               </button>
               {state === "error" && <div className={styles.itemError}>Purchase failed.</div>}
             </div>

@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { Share2, Star } from "lucide-react";
 import type { GameState } from "@nonet/engine";
 import type { FinishResult, ReviveOutcome } from "../store/gameStore.js";
+import { hapticSelection, shareViaTelegram } from "../telegram/webapp.js";
 import styles from "./GameOverOverlay.module.css";
 
 interface GameOverOverlayProps {
@@ -56,12 +58,28 @@ export function GameOverOverlay({ game, finishResult, revivePending, onRestart, 
       {reviveHint && <div className={styles.reviveHint}>{reviveHint}</div>}
       <div className={styles.actions}>
         <button type="button" className={styles.revive} disabled={revivePending} onClick={() => void handleRevive()}>
-          {revivePending ? "…" : "⭐ Revive (30)"}
+          {revivePending ? (
+            "…"
+          ) : (
+            <>
+              <Star size={16} aria-hidden="true" /> Revive (30)
+            </>
+          )}
         </button>
         <button type="button" className={styles.restart} onClick={onRestart}>
           Play again
         </button>
       </div>
+      <button
+        type="button"
+        className={styles.share}
+        onClick={() => {
+          hapticSelection();
+          shareViaTelegram(`I scored ${game.score.toLocaleString()} in NONET! Can you beat it? 🧩`);
+        }}
+      >
+        <Share2 size={16} aria-hidden="true" /> Share score
+      </button>
     </div>
   );
 }

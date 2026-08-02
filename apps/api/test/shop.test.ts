@@ -43,6 +43,11 @@ describe("GET /api/shop", () => {
     const bySku = Object.fromEntries(skus.map((s: { sku: string }) => [s.sku, s]));
     expect(bySku.pencil_5).toMatchObject({ starsAmount: 25, contents: { pencil: 5 } });
     expect(bySku.revive).toMatchObject({ starsAmount: 30, contents: {} });
+    // §19 settings: purchasable cosmetic themes, seeded from packages/shared's
+    // PREMIUM_THEMES — same generic SKU/inventory pipeline as the powerups above.
+    expect(bySku.theme_sunset).toMatchObject({ starsAmount: 60, contents: { theme_sunset: 1 } });
+    expect(bySku.theme_ocean).toMatchObject({ starsAmount: 60, contents: { theme_ocean: 1 } });
+    expect(bySku.theme_neon).toMatchObject({ starsAmount: 60, contents: { theme_neon: 1 } });
   });
 });
 

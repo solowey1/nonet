@@ -46,6 +46,7 @@ describe("GET /api/profile", () => {
     // same value /api/session itself just reported, not a hardcoded 0.
     expect(streak).toBe(1);
     expect(body.streak).toBe(1);
+    expect(body.tonAddress).toBeNull();
   });
 
   it("picks up a verified run's score as the best run and in aggregate stats", async () => {
@@ -72,5 +73,64 @@ describe("GET /api/profile", () => {
     expect(body.stats.runsPlayed).toBe(1);
     expect(body.stats.piecesPlaced).toBe(actions.length);
     expect(body.bestRun).toEqual({ score: finalState.score, achievedAt: expect.any(String) });
+  });
+});
+
+describe("POST /api/profile/wallet", () => {
+  // A real user-friendly TON address is 48 base64url characters.
+  const SAMPLE_ADDRESS = "UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+  it("rejects without a session token", async () => {
+    const res = await app.inject({ method: "POST", url: "/api/profile/wallet", payload: { tonAddress: SAMPLE_ADDRESS } });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("rejects a string that isn't a recognizable TON address", async () => {
+    const { token } = await sessionFor(3);
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/profile/wallet",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { tonAddress: "not-a-wallet-address" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("links a wallet address and persists it across a later /api/profile fetch", async () => {
+    const { token } = await sessionFor(4);
+
+    const linkRes = await app.inject({
+      method: "POST",
+      url: "/api/profile/wallet",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { tonAddress: SAMPLE_ADDRESS },
+    });
+    expect(linkRes.statusCode).toBe(200);
+    expect(linkRes.json().tonAddress).toBe(SAMPLE_ADDRESS);
+
+    const profileRes = await app.inject({ method: "GET", url: "/api/profile", headers: { authorization: `Bearer ${token}` } });
+    expect(profileRes.json().tonAddress).toBe(SAMPLE_ADDRESS);
+  });
+
+  it("unlinks a wallet by sending tonAddress: null", async () => {
+    const { token } = await sessionFor(5);
+    await app.inject({
+      method: "POST",
+      url: "/api/profile/wallet",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { tonAddress: SAMPLE_ADDRESS },
+    });
+
+    const unlinkRes = await app.inject({
+      method: "POST",
+      url: "/api/profile/wallet",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { tonAddress: null },
+    });
+    expect(unlinkRes.statusCode).toBe(200);
+    expect(unlinkRes.json().tonAddress).toBeNull();
+
+    const profileRes = await app.inject({ method: "GET", url: "/api/profile", headers: { authorization: `Bearer ${token}` } });
+    expect(profileRes.json().tonAddress).toBeNull();
   });
 });

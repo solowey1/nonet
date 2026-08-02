@@ -1,8 +1,8 @@
-import { profileResponseSchema } from "@nonet/shared";
+import { profileResponseSchema, walletLinkRequestSchema, walletLinkResponseSchema } from "@nonet/shared";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/client.js";
-import { dailyStats, runs } from "../db/schema.js";
+import { dailyStats, runs, users } from "../db/schema.js";
 
 export async function profileRoutes(app: FastifyInstance) {
   app.get("/api/profile", { preHandler: app.authenticate }, async (request, reply) => {
@@ -33,6 +33,8 @@ export async function profileRoutes(app: FastifyInstance) {
       .where(and(eq(dailyStats.userId, userId), eq(dailyStats.day, today)));
     const streak = todayStats?.streak ?? 0;
 
+    const [user] = await db.select({ tonAddress: users.tonAddress }).from(users).where(eq(users.id, userId));
+
     return reply.send(
       profileResponseSchema.parse({
         stats: {
@@ -42,7 +44,26 @@ export async function profileRoutes(app: FastifyInstance) {
         },
         bestRun: bestRun && bestRun.endedAt ? { score: bestRun.score, achievedAt: bestRun.endedAt.toISOString() } : null,
         streak,
+        tonAddress: user?.tonAddress ?? null,
       }),
     );
+  });
+
+  // §14 stub: links (or clears, if tonAddress is null) a TON Connect wallet
+  // address for future Gram reward payouts. Deliberately does NOT verify the
+  // wallet's `ton_proof` signature — no funds or rewards flow through this
+  // address yet, so trusting whatever TonConnect UI reports client-side is a
+  // reasonable stub boundary rather than a production security posture (see
+  // DECISIONS.md). Real payouts would need that verification added first.
+  app.post("/api/profile/wallet", { preHandler: app.authenticate }, async (request, reply) => {
+    const parsed = walletLinkRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid_request", details: parsed.error.flatten() });
+    }
+    const userId = request.userId as bigint;
+
+    await db.update(users).set({ tonAddress: parsed.data.tonAddress }).where(eq(users.id, userId));
+
+    return reply.send(walletLinkResponseSchema.parse({ tonAddress: parsed.data.tonAddress }));
   });
 }

@@ -69,6 +69,10 @@
 
 .restart,
 .revive {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: 44px;
   min-width: 44px;
   padding: 10px 24px;
@@ -97,5 +101,24 @@
 
 .restart:active,
 .revive:active {
+  transform: scale(0.97);
+}
+
+.share {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  margin-top: 4px;
+  padding: 6px 14px;
+  border-radius: var(--nonet-radius);
+  border: none;
+  background: transparent;
+  color: var(--nonet-text-dim);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.share:active {
   transform: scale(0.97);
 }

@@ -755,3 +755,463 @@ the *same* score, entirely from client-side state with no network round
 trip. 113 engine tests (111 + 2 new) and 51 API tests (48 + 3 new, covering
 the profile streak fix) all pass; both `tsc --noEmit` and `vite build`
 stay clean across every workspace package.
+
+# Phase 6: polish (§12's deferred checklist — theme params, haptics, CloudStorage, share cards)
+
+`telegram/webapp.ts` named these four items as explicitly deferred back in
+Phase 2. All four are wired now; none needed a server-side change — they're
+all client-side Telegram WebApp SDK surface.
+
+## Theme params override a deliberately small subset of CSS variables, as inline styles
+
+Real `WebApp.themeParams` + `colorScheme` now drive `--nonet-bg`,
+`--nonet-board`, `--nonet-cell-empty`, `--nonet-text`, `--nonet-text-dim`,
+`--nonet-accent` (from `button_color`), and `--nonet-danger` — set as
+inline styles on `<html>` via `applyThemeParams()`, re-run on Telegram's
+`themeChanged` event. Deliberately *not* touched: the five `--nonet-piece-*`
+colours, radius, and shadow — those are the game's own visual identity
+(§15), not something that should shift with the user's Telegram theme the
+way chrome/background colours reasonably should. Inline styles on `<html>`
+always beat `theme.css`'s `:root { ... }` rule for the same element
+regardless of specificity, so this layers cleanly over — rather than
+replaces — the existing `prefers-color-scheme` fallback that plain-browser
+dev/testing still relies on (no real `Telegram.WebApp` object there, so
+`applyThemeParams` no-ops and the CSS fallback alone applies).
+
+## Haptics are scaled to what actually happened, not a single generic buzz
+
+`hapticImpact("light")` for a plain placement, `hapticImpact("medium")` for
+any clear, `hapticNotification("success")` for a perfect clear,
+`hapticNotification("error")` for both an illegal drop and reaching game
+over, `hapticNotification("success")` for a completed revive purchase, and
+`hapticSelection()` for menu/tab navigation. All gated behind a single
+`hapticsEnabled` module flag (default on) so every call site stays a
+one-liner regardless of the user's preference — see below.
+
+## Haptics preference is real user-facing state, backed by CloudStorage, not a platform on/off switch
+
+Telegram's own haptics either exist on a client or they don't — nothing to
+toggle there. The toggle is ours: a `hapticsEnabled` preference synced via
+`WebApp.CloudStorage` (a small per-user key-value store that follows the
+user across their devices), with a `localStorage` fallback outside
+Telegram so the toggle still persists locally during dev/testing rather
+than silently doing nothing. Loaded once, fire-and-forget, during
+`bootstrapTelegramWebApp()` — by the time the main menu can actually render
+(after the session/profile round trip completes), the single CloudStorage
+read has essentially always already resolved, so no loading state was
+built for it.
+
+## Share cards use `t.me/share/url`, not inline-mode
+
+Telegram Mini Apps have a few ways to let a player share something: bot
+inline-mode query results, `shareToStory`, or a plain
+`t.me/share/url?url=...&text=...` deep link opened via
+`WebApp.openTelegramLink`. The first needs bot-side inline-mode
+configuration in BotFather; the Mini App has no server-rendered "story"
+asset to share. `t.me/share/url` needs neither — it opens Telegram's native
+"choose a chat" sheet with pre-filled text, working with any bot as-is.
+Shared text links back to the Mini App's own `window.location.origin`
+rather than a hardcoded bot deep link — no `BOT_USERNAME` config was added
+for this, since the app's own origin is already exactly the right thing to
+share and requires zero extra plumbing. Available from both the game-over
+screen (share the run's score) and the "My Stats" tab (share the
+all-time best).
+
+## Verified without a real Telegram client, by mocking the WebApp SDK
+
+None of this is testable through `ALLOW_DEV_SESSION`'s plain-browser dev
+path the way earlier phases' manual passes were — there's no real
+`window.Telegram.WebApp` there at all. Instead, drove headless Chromium
+with a `page.addInitScript`-injected mock `Telegram.WebApp` (themeParams,
+`HapticFeedback`, `CloudStorage`, `openTelegramLink`, all instrumented to
+record calls) and confirmed, end to end rather than by reading the code:
+the mocked theme's colours actually land on `<html>`'s inline style and
+visibly repaint the whole UI; a real placement fires exactly one
+`impactOccurred("light")` call; toggling haptics off in the menu writes
+`"false"` to the mocked CloudStorage *and* silences every subsequent
+haptic call (not just cosmetically unchecking a box); and the share button
+calls `openTelegramLink` with a correctly-encoded
+`t.me/share/url?...&text=I%20scored%204%2C242%20in%20NONET!...` string.
+113 engine tests, 51 API tests, `tsc --noEmit`, and `vite build` all still
+pass/succeed after these changes.
+
+# Pre-Phase-7 addendum: fullscreen, safe areas, and a landscape layout
+
+Requested before moving on to §19 step 7 (Gram/TON stubs): launch straight
+into fullscreen, respect Telegram's `safeAreaInset`/`contentSafeAreaInset`,
+and add a landscape layout (board centered, score+hints on the left,
+controls+hand tray on the right).
+
+## Could not verify Telegram's own docs live — implemented from trained knowledge, defensively
+
+Both linked doc pages (`core.telegram.org/bots/webapps#...`) 403'd through
+this sandbox's egress proxy — confirmed via the proxy's own status endpoint
+as a policy denial on `core.telegram.org`, not a transient failure, so no
+retry or workaround was attempted (per the proxy's own guidance). Every new
+field/method (`isFullscreen`, `requestFullscreen`, `exitFullscreen`,
+`safeAreaInset`, `contentSafeAreaInset`, the `safeAreaChanged` /
+`contentSafeAreaChanged` / `fullscreenChanged` / `fullscreenFailed` events)
+is written from Bot API 8.0 knowledge, but feature-detected the same way
+every other WebApp API surface in this file already is (`webApp.method?.()`,
+`webApp.field ?? fallback`) — a wrong field name or an older client without
+this API resolves to the same safe fallback (0 insets, no fullscreen
+request attempted) rather than throwing. Flagged to the user directly
+rather than silently presenting it as doc-verified.
+
+## `safeAreaInset` and `contentSafeAreaInset` are summed, not maxed, per edge
+
+They're two independently-obstructing things stacked on the same edge, not
+two measurements of the same one: `safeAreaInset` is the OS-level
+obstruction (notch, home indicator) that only really matters once running
+fullscreen; `contentSafeAreaInset` is Telegram's *own* chrome (header bar,
+back/close/settings controls) drawn on top of that. Content needs to clear
+both, so each edge's usable inset is `safeAreaInset[edge] +
+contentSafeAreaInset[edge]`, exposed as one combined `--tg-inset-*` custom
+property per edge. Where this combined value meets the browser's own
+`env(safe-area-inset-*)` (which already covers the non-Telegram/plain-notch
+case), the two *are* maxed against each other (`--nonet-safe-*`) — those
+are alternate sources for the same single obstruction, not two stacked
+ones.
+
+## Centralized into four `--nonet-safe-*` vars, replacing four components' local `env()` calls
+
+`ScoreHud`, `LeaderboardScreen`, `ShopOverlay`, and `HandTray` each computed
+their own `calc(10px + env(safe-area-inset-top, 0px))` independently. Since
+"content must stay inside `contentSafeAreaInset`" is now a real constraint
+(not just a nice-to-have `env()` fallback for a phone notch), centralizing
+the combined value in `theme.css` means every consumer gets Telegram's own
+insets too without each one needing to know `--tg-inset-*` exists.
+
+## Landscape: `display: contents` splits one row into two independent grid items, without duplicating either
+
+The hardest part of "board centered, score+hints left, controls+tray
+right" is that `hudRow` (score + the Home/Shop buttons) is one visual row
+in portrait but needs its two halves on *opposite sides* of the screen in
+landscape — genuinely different relationships, not just repositioned as a
+unit. Rather than render two separate JSX trees (which would double-mount
+`Board`/`HandTray`/etc., breaking their single `boardRef` and drag-session
+state), `.hudRow` becomes `display: contents` under `@media (orientation:
+landscape)`: it stops generating its own box, so its two children (a
+`scoreArea` div and a `controlsArea` div) become direct grid items of
+`.app`'s grid instead of flex children of `hudRow` — placeable via
+`grid-area` on opposite sides of a 3-column `grid-template-areas` layout
+(`score board controls` / `hint board inventory` / `hint board tray`,
+`board` spanning all 3 rows so it centers vertically across the full
+height) without a single component being mounted twice. Portrait keeps
+`hudRow`'s original `display: flex` — same DOM, same components, just a
+different CSS relationship between the exact same nodes.
+
+## HandTray's jump-prevention fix (see the earlier "board jumped" entry) needed a second axis
+
+That fix reserved tray *height* so a row of pieces couldn't reflow the
+board vertically. Landscape's right column stacks the 3 pieces
+*vertically* instead (a horizontal row of up to 5-cell-wide pieces doesn't
+fit a ~150px-wide column) — which flips which axis varies per hand: now
+it's *width*, not height, that needs reserving to avoid the same class of
+jump recurring sideways. Rather than duplicate the "reserve the tallest
+possible piece" computation, the already-computed pixel value is exposed
+as one CSS custom property (`--nonet-tray-reserve`) alongside the existing
+`minHeight`, and `HandTray.module.css`'s landscape rule reads it as
+`min-width` — one JS computation, one CSS variable, consumed as whichever
+dimension actually matters per orientation.
+
+## Verified geometrically, not just visually, against a mocked WebApp SDK
+
+Headless Chromium at a landscape (780x400) viewport with a mocked
+`Telegram.WebApp` confirmed: `requestFullscreen` is actually called;
+`--tg-inset-top` computes to exactly `safeAreaInset.top +
+contentSafeAreaInset.top`; and — read directly via
+`getBoundingClientRect()`, not eyeballed from a screenshot — the board is
+genuinely horizontally centered in the viewport, score sits at the
+top-left, controls at the top-right (same row as score), and
+inventory/tray stack below controls on the right, exactly matching the
+requested layout. Re-ran the existing 30-real-placement board-stability
+check (from the earlier "board jumped" fix) in landscape specifically and
+confirmed the board's position and size still never moves by a pixel
+across many hand changes; a separate portrait-viewport screenshot confirms
+no visual regression there. 113 engine tests, 51 API tests, `tsc --noEmit`,
+and `vite build` all still pass/succeed.
+
+# Two more user-reported bugs
+
+## The "region too large" hint could still push the board down
+
+The earlier hand-tray jump fix reserved a `min-height` for `.hint`, but
+`min-height` is only a floor — the actual message ("Region too large (N
+cells) — pick a smaller pocket") wraps to 2 lines on a narrower viewport,
+and a 2-line box is taller than a 1-line `min-height`, pushing everything
+below it (the board) down exactly like the original bug. Fixed by using a
+fixed `height` (not `min-height`) with `overflow: hidden` instead — a box
+that can't grow past its set height can't push anything, regardless of how
+many lines the text wraps to.
+
+## Releasing a drag outside the board could still place it there
+
+Both `useDragPlacement` (piece placement) and `usePowerupTargeting`
+(pencil/eraser/bomb/fill) compute a target row/col by `clamp`ing the
+pointer's fractional board position into `[0, BOARD_SIZE)` — correct for
+keeping a piece whose center is near an edge fully on-grid, but it clamped
+*any* pointer position this way, including one that had left the board
+rect entirely (e.g. still hovering the hand tray or the score/inventory
+area above it). That meant releasing off the board could still snap to
+and place on some in-bounds cell nowhere near the pointer, and the ghost
+preview would render there too — clearly wrong once you notice the pointer
+was never actually over the board. Fixed the same way in both hooks: bail
+out to `null` (no ghost/preview, no placement/commit) the moment the raw
+pointer coordinates fall outside the board element's own
+`getBoundingClientRect()`, before any clamping happens.
+
+Verified both directly, not just by re-reading the fix: for the hint, the
+board's `getBoundingClientRect()` was read before and during a real
+region-too-large hint and confirmed byte-identical; for the drag fix,
+dragging a piece onto the board (confirmed via `[data-ghost]` cells
+actually present) and then off it again confirmed the ghost cells vanish
+entirely, and releasing there confirmed the hand and board state are
+completely unchanged (no phantom placement).
+
+# Phase 7 — §14 Gram/TON stub
+
+## "Gram" is a June 2026 rebrand of the token, not a new/different chain
+
+Asked for clarification before building this, since the original brief's
+§14 text wasn't available verbatim after compaction and "Gram" is
+ambiguous (a new internal soft currency? a typo for "Stars"? a TON
+synonym?). The user's answer — "TON is called Gram again now, check the
+latest updates" — was a factual claim about the world, not a design
+preference, so it got verified rather than taken on faith: multiple
+independent sources (AMBCrypto, MEXC, crypto.news, Wikipedia, Yahoo
+Finance) confirm that on June 15 2026, following an 81.22% community vote,
+The Open Network's native token was renamed from Toncoin (TON) back to
+Gram (GRAM) — a pure ticker/branding change. No token swap; holder
+addresses and balances are unchanged. Critically, the network/protocol
+itself keeps the name "The Open Network (TON)" — only the coin's
+user-facing name changed. That's why every place in this codebase that
+talks to the *protocol* still says "TON Connect" (that's the library's
+real, unchanged name), while every place that talks to the *currency* in
+user-facing copy says "Gram" (e.g. the connect button: "Connect wallet for
+future Gram rewards").
+
+## Real TON Connect, not a text field — but address-capture only
+
+The user explicitly asked for "real TON Connect (recommended)" over a fake
+text-input stub. `@tonconnect/ui` is wired as the actual protocol: a
+same-origin `GET /api/tonconnect-manifest.json` (served dynamically from
+`WEBAPP_URL`, since a single Docker image doesn't know its own deployed
+origin at build time) feeds `TonConnectUI`, which mounts the genuine
+QR-code/wallet-list modal and drives the real TON Connect bridge protocol.
+
+What this stub deliberately does **not** do, and why that's still an
+honest reading of "stub":
+- **No `ton_proof` verification server-side.** `POST /api/profile/wallet`
+  persists whatever address the client reports, unverified. Since no
+  funds or payouts flow through this address yet (see next point), a
+  spoofed address can't be used to steal anything — it would just make a
+  future payout (once one exists) go to the wrong place, which is exactly
+  the kind of check that needs adding *before* payouts exist, not before
+  this stub does.
+- **No transactions, no payouts.** This phase only captures and stores an
+  address for future Gram reward payouts described in the brief — it does
+  not send Gram, mint anything, or touch a real ledger.
+- **UI state reflects the live TonConnectUI session, not the server's
+  stored address.** `MainMenu` shows "connected" based on
+  `currentWalletAddress()` (TonConnectUI's own restored session), not
+  `profile.tonAddress`. This is intentional, not an oversight: wallet
+  *control* lives with whatever device actually paired via TON Connect, so
+  showing the server's copy as "connected" on a different device would
+  claim a control the device doesn't have. The server's copy exists purely
+  so a payout system (when built) has somewhere to look up an address —
+  it's not meant to drive this button's state.
+- **Placeholder icon.** `apps/web/public/icon-192.png` is a flat
+  `--nonet-accent`-colored square generated for this stub (no real brand
+  artwork exists yet) — the manifest needs *some* fetchable icon URL, and
+  a solid color is honest about being a placeholder rather than a design
+  attempt. Replace before shipping any real branding push.
+
+## Verified what's actually testable without a real TON wallet
+
+Same constraint as Stars in Phase 5 (no live Telegram client), except here
+there's also no real TON wallet or mobile bridge in this sandbox, so a
+full connect→sign→confirm round trip can't be exercised end-to-end. What
+*was* verified, via headless Chromium against the running dev servers
+(mocked `Telegram.WebApp`, real Postgres, real API):
+- The "Connect wallet" button renders on the main menu with Gram-framed
+  copy (not "TON"/"Toncoin" as a currency name).
+- Clicking it mounts the *real* `TonConnectUI` modal (not a placeholder) —
+  confirmed by screenshot: a genuine QR code with the app's own manifest
+  name/icon watermarked into it, plus the standard wallet list (Wallet in
+  Telegram, Tonkeeper, MyTonWallet, "View all wallets") and "TON Connect"
+  footer branding. The wallets-list registry fetch itself fails in this
+  sandbox (outbound network policy blocks it, same class of restriction
+  hit earlier with `core.telegram.org`) but TonConnectUI degrades
+  gracefully and still renders its bundled wallet shortlist — proving the
+  manifest wiring and library integration are both genuinely live, not
+  mocked.
+- Backend persistence has full integration-test coverage (`POST
+  /api/profile/wallet`, `apps/api/test/profile.test.ts`): rejects without
+  a session token, rejects a malformed address, links and persists across
+  a subsequent `GET /api/profile`, and unlinks via `tonAddress: null`.
+
+Not verified, and not verifiable here: an actual wallet completing the
+pairing handshake, a real `ton_proof`, or any payout — all require a real
+TON wallet/mobile client this environment doesn't have.
+
+113 engine tests, 56 API tests, `tsc --noEmit`, and `vite build` all
+pass/succeed.
+
+# §19 — native navigation, header theming, and settings/themes
+
+## Leaderboard/Shop/Settings became full screens, not popups over the menu
+
+Previously `MainMenu` owned `shopOpen`/`leaderboardOpen` local state and
+rendered `ShopOverlay`/`LeaderboardScreen` as an absolutely-positioned
+overlay *on top of* the still-mounted menu. The user asked for real
+navigation instead: Leaderboard/Shop are now driven by the store's own
+`screen` field (extended from `"menu" | "game"` to `"menu" | "game" |
+"leaderboard" | "shop" | "settings"`), and `App.tsx` switches which single
+screen is mounted — the menu is genuinely unmounted while any of the
+others is showing, not hidden underneath. Since every non-menu screen is
+reached only from the menu (never from each other), "back" from any of
+them always means "menu" — a flat one-level graph, not a generic
+stack/router; `goToMenu()` is the single, uniform back-handler for all of
+them. The in-game Shop button (opened *during* a run, to top up power-ups
+without losing your board) deliberately stays a real overlay — leaving the
+game screen to view it as a full page would mean losing sight of the live
+board mid-run, which the user's request didn't ask for and would be a
+regression, not an improvement.
+
+## Native BackButton/SettingsButton drive the same navigation the in-app controls do
+
+Added `showBackButton`/`hideBackButton`/`initSettingsButton` to
+`webapp.ts`, feature-detected the same way as every other Bot-API-version
+addition in this file. A single `useEffect` in `App.tsx`, keyed on
+`screen`, shows the native BackButton (wired to `goToMenu`) on every
+screen but the menu and hides it there — one place decides this for all
+five screens, rather than each screen managing its own BackButton
+visibility. SettingsButton is registered once at boot with a single fixed
+handler (`goToSettings`) since it's a persistent native menu control, not
+a per-screen affordance, matching how Telegram itself presents it.
+
+## Leaving the game screen via Back saves progress immediately, not just on the next periodic checkpoint
+
+`goToMenu()` already existed as the in-game Home button's handler; it now
+also force-checkpoints (ignoring the usual 25-action threshold) whenever
+the screen being left is `"game"` — covering both the native BackButton
+and the in-app Home button, since both route through the same store
+action. This is on top of, not instead of, the existing
+visibilitychange/pagehide safety net from the earlier "progress lost on
+close" fix — that net still catches a real app close regardless of
+whether this specific checkpoint request succeeds, so the new call is
+fire-and-forget rather than blocking navigation on a round trip.
+
+## `header_bg_color`/`setHeaderColor` use Telegram's color-*key* mode, not a static hex, in auto mode
+
+`setHeaderColor('bg_color')` (and the equivalent `setBackgroundColor`)
+tells Telegram to keep the native header/background permanently pinned to
+whatever `bg_color` currently is — including through a live `themeChanged`
+event — rather than a one-time hex snapshot that would need re-sending on
+every theme change. Called from inside `applyThemeParams` itself (the
+same function that already runs at first paint and on every
+`themeChanged`), so there's no separate code path to keep in sync, and
+critically no window where the native header briefly shows the wrong
+color before the page's own background catches up — the two are set from
+the same function, in the same tick, using the same source value. This
+mode is only correct while "auto" (Telegram-tracking) is the active theme
+— see below for what happens once a user picks an explicit theme instead.
+
+## Explicit theme choice (Auto/Light/Dark/premium) vs. Telegram's own live theme
+
+The brief asks for both: Telegram's live theme should keep working as
+before (`themeParams`, `themeChanged`), *and* a user should be able to
+override it in Settings with Light/Dark or (once purchased) a premium
+palette. These are two different authorities over the same CSS custom
+properties, so they need an explicit precedence rule, not just "last
+writer wins by accident": `applyThemeParams` (Telegram's own sync) now
+bails out immediately if an explicit theme mode is active, checked via a
+single module-level `themeMode` flag in `webapp.ts`. Switching back to
+"auto" clears the explicit override and immediately re-invokes
+`applyThemeParams` once, rather than waiting for the next `themeChanged`
+event, so the OS/Telegram-driven theme reappears the instant the user
+picks "Auto" again, not on some future event.
+
+Explicit palettes (`light`, `dark`, and every id in `@nonet/shared`'s
+`PREMIUM_THEMES`) are applied via the exact same mechanism Telegram's own
+sync already uses — `documentElement.style.setProperty(...)` — since
+inline styles unconditionally beat any stylesheet rule (the existing
+`:root`/`prefers-color-scheme` blocks in `theme.css`), this needed no new
+CSS at all; explicit mode just writes to the same custom properties from
+a different source. The preference is persisted via CloudStorage (the
+same key-value bridge haptics already uses), and — because `bootstrap()`
+now `await`s `loadThemePreference()` *before* `syncTelegramTheme()` runs —
+a returning user's explicit choice is in effect before Telegram's own
+live sync could ever paint the wrong colors first, avoiding exactly the
+"flash of the wrong theme at startup" the user called out as important.
+`loadHapticsPreference()` was moved to run unconditionally too (previously
+gated behind an `if (!webApp) return`, meaning it silently never ran
+outside a real Telegram WebView) — that gate no longer makes sense once a
+sibling preference (theme) needs to work in plain-browser dev/testing too,
+and CloudStorage's localStorage fallback already existed specifically for
+this case.
+
+## Premium themes reuse the existing generic inventory/shop pipeline — no schema changes
+
+`inventoryBalance` was already a generic `(userId, item) -> qty` table with
+no enum constraint on `item` (confirmed: `inventory` in the shared schemas
+is `z.record(z.string(), z.number())`, not restricted to `PowerupKind`).
+So a purchasable theme is just another SKU whose `contents` grants one
+unit of `theme_<id>` — the exact same purchase → Stars webhook → inventory
+credit path that already exists for pencils/erasers/etc., with zero new
+tables, columns, or endpoints. `packages/shared/src/themes.ts` is the
+single source of truth for the theme catalogue (id, title, description,
+price, palette) — `apps/api`'s `seedShopSkus` derives the SKU rows from it
+and `apps/web`'s Settings screen derives the picker (and the actual CSS
+custom property values) from the same list, so the two can't drift apart.
+Ownership is just `inventory[themeInventoryKey(id)] > 0`; an unowned theme
+in Settings is shown locked (with a lock icon) and tapping it navigates to
+the Shop instead of applying anything.
+
+Three premium palettes were invented for this phase (Sunset, Ocean, Neon —
+see `packages/shared/src/themes.ts` for exact hex values) since the brief
+asked for "purchasable themes exist" without specifying which — this is a
+content/design choice, not a technical constraint, and can be edited or
+extended purely by editing that one file (plus reseeding).
+
+## shadcn/ui: blocked, by design choice deferred to the user
+
+The literal requested command — `npx shadcn@latest init --preset
+b4zjJzewi --template vite` — cannot run in this sandbox: `ui.shadcn.com`
+(the CLI's registry, used by *every* subcommand including plain `add
+button`, not just a preset-specific call) is rejected at the network
+proxy with the same class of policy denial hit earlier for
+`core.telegram.org` — confirmed by actually running both `init` and `add
+button` and observing identical `CONNECT ... 403` failures, not just a
+`curl` probe. Given the scale of a real shadcn/Tailwind migration (every
+screen's markup and styling) and that shadcn's registry-fetched components
+can't be reliably hand-reproduced for an unfamiliar newer style variant
+(the failed request's query params showed `style=nova, theme=sky` — not
+the classic `default`/`new-york` styles this assistant has reliable
+trained knowledge of), the user was asked how to proceed and chose to run
+the CLI locally and push the result rather than have it hand-approximated.
+Everything in this phase was therefore built on the existing CSS-module
+system so it's fully functional today; migrating the resulting JSX onto
+the pushed shadcn scaffold is expected to be a visual re-skin once it
+arrives, not a re-derivation of any navigation/theme/checkpoint logic.
+
+## Verified with headless Chromium against real dev servers (mocked Telegram WebApp, real Postgres, real API)
+
+21 checks covering: `setHeaderColor`/`setBackgroundColor` called with
+`'bg_color'` at first paint; the main menu's exact 5-item order with
+"Continue" disabled when there's no resumable run; the native BackButton
+mock hidden on the menu and shown (with a working handler) on
+Leaderboard/Shop; a simulated *native* BackButton press (not the in-page
+arrow) correctly returning to the menu from each; a simulated
+SettingsButton press jumping straight to Settings; selecting Light/Dark
+applying that exact palette's `--nonet-bg` immediately and repointing the
+native header to that literal hex; clicking a locked premium theme
+redirecting to the Shop without changing the active palette; selecting
+"Auto" reverting to the pre-override background; and — starting a real
+run, placing a real piece via simulated pointer drag, then firing the
+mocked native BackButton — an actual `POST /api/run/checkpoint` request
+firing before returning to the menu. All 21 passed. 113 engine tests, 57
+API tests (one new: crediting a purchased theme SKU as a permanent
+inventory unlock), `tsc --noEmit` across every package, and `vite build`
+all pass/succeed.

@@ -1,30 +1,22 @@
-import { useState } from "react";
-import type { PowerupKind } from "@nonet/shared";
+import { Play, RotateCcw, Settings, Store, Trophy } from "lucide-react";
 import { useGameStore } from "../store/gameStore.js";
-import { LeaderboardScreen } from "./LeaderboardScreen.js";
-import { ShopOverlay } from "./ShopOverlay.js";
+import { hapticSelection } from "../telegram/webapp.js";
+import { POWERUP_ICON } from "../utils/powerupIcon.js";
 import styles from "./MainMenu.module.css";
 
-const POWERUPS: ReadonlyArray<{ kind: PowerupKind; emoji: string }> = [
-  { kind: "pencil", emoji: "✏️" },
-  { kind: "eraser", emoji: "🧹" },
-  { kind: "rocket", emoji: "🚀" },
-  { kind: "bomb", emoji: "💣" },
-  { kind: "fill", emoji: "🪣" },
-];
+const POWERUP_ORDER = ["pencil", "eraser", "rocket", "bomb", "fill"] as const;
 
+/** §19: Continue/New game, Leaderboard, Shop, Settings — a plain list, not the previous button grid. */
 export function MainMenu() {
   const runId = useGameStore((s) => s.runId);
   const gameStatus = useGameStore((s) => s.game.status);
   const inventory = useGameStore((s) => s.inventory);
   const profile = useGameStore((s) => s.profile);
-  const sessionToken = useGameStore((s) => s.sessionToken);
-  const refreshInventory = useGameStore((s) => s.refreshInventory);
   const newRun = useGameStore((s) => s.newRun);
   const continueRun = useGameStore((s) => s.continueRun);
-
-  const [shopOpen, setShopOpen] = useState(false);
-  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const goToLeaderboard = useGameStore((s) => s.goToLeaderboard);
+  const goToShop = useGameStore((s) => s.goToShop);
+  const goToSettings = useGameStore((s) => s.goToSettings);
 
   const hasActiveRun = runId !== null;
 
@@ -38,47 +30,77 @@ export function MainMenu() {
         </div>
       )}
 
-      <button
-        type="button"
-        className={styles.primary}
-        onClick={() => (hasActiveRun ? continueRun() : void newRun())}
-      >
-        {hasActiveRun ? (gameStatus === "gameover" ? "▶️ Resume (Game Over)" : "▶️ Continue") : "▶️ Play"}
-      </button>
-      {hasActiveRun && (
+      <div className={styles.inventoryStrip}>
+        {POWERUP_ORDER.map((kind) => {
+          const Icon = POWERUP_ICON[kind];
+          return (
+            <div key={kind} className={styles.invSlot}>
+              <Icon size={18} aria-hidden="true" />
+              <span className={styles.invCount}>{inventory[kind] ?? 0}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <nav className={styles.list}>
         <button
           type="button"
-          className={styles.secondaryText}
-          onClick={() => void newRun()}
+          className={styles.listItem}
+          data-primary="true"
+          disabled={!hasActiveRun}
+          onClick={() => {
+            hapticSelection();
+            continueRun();
+          }}
         >
-          Start a new game instead
+          <Play size={20} aria-hidden="true" />
+          {hasActiveRun && gameStatus === "gameover" ? "Resume (Game Over)" : "Continue"}
         </button>
-      )}
-
-      <div className={styles.inventoryStrip}>
-        {POWERUPS.map(({ kind, emoji }) => (
-          <div key={kind} className={styles.invSlot}>
-            <span aria-hidden="true">{emoji}</span>
-            <span className={styles.invCount}>{inventory[kind] ?? 0}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className={styles.actions}>
-        <button type="button" className={styles.actionButton} onClick={() => setLeaderboardOpen(true)}>
-          🏆 Leaderboard
+        <button
+          type="button"
+          className={styles.listItem}
+          onClick={() => {
+            hapticSelection();
+            void newRun();
+          }}
+        >
+          <RotateCcw size={20} aria-hidden="true" />
+          New game
         </button>
-        <button type="button" className={styles.actionButton} onClick={() => setShopOpen(true)}>
-          🛍 Shop
+        <button
+          type="button"
+          className={styles.listItem}
+          onClick={() => {
+            hapticSelection();
+            goToLeaderboard();
+          }}
+        >
+          <Trophy size={20} aria-hidden="true" />
+          Leaderboard
         </button>
-      </div>
-
-      {shopOpen && sessionToken && (
-        <ShopOverlay sessionToken={sessionToken} onClose={() => setShopOpen(false)} onPurchased={refreshInventory} />
-      )}
-      {leaderboardOpen && (
-        <LeaderboardScreen sessionToken={sessionToken} profile={profile} onClose={() => setLeaderboardOpen(false)} />
-      )}
+        <button
+          type="button"
+          className={styles.listItem}
+          onClick={() => {
+            hapticSelection();
+            goToShop();
+          }}
+        >
+          <Store size={20} aria-hidden="true" />
+          Shop
+        </button>
+        <button
+          type="button"
+          className={styles.listItem}
+          onClick={() => {
+            hapticSelection();
+            goToSettings();
+          }}
+        >
+          <Settings size={20} aria-hidden="true" />
+          Settings
+        </button>
+      </nav>
     </div>
   );
 }

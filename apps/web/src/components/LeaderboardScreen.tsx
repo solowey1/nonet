@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { ArrowLeft, Flame, Share2 } from "lucide-react";
 import type { LeaderboardResponse, ProfileResponse } from "@nonet/shared";
 import { getLeaderboard } from "../api/client.js";
+import { hapticSelection, shareViaTelegram } from "../telegram/webapp.js";
 import styles from "./LeaderboardScreen.module.css";
 
 type Scope = "daily" | "weekly" | "all_time";
@@ -41,22 +43,33 @@ export function LeaderboardScreen({ sessionToken, profile, onClose }: Leaderboar
   return (
     <div className={styles.overlay} role="dialog" aria-label="Leaderboard">
       <div className={styles.header}>
+        <button type="button" className={styles.close} aria-label="Back" onClick={onClose}>
+          <ArrowLeft size={20} aria-hidden="true" />
+        </button>
         <div className={styles.tabs}>
           <button
             type="button"
             className={styles.tab}
             data-active={tab === "leaderboard"}
-            onClick={() => setTab("leaderboard")}
+            onClick={() => {
+              hapticSelection();
+              setTab("leaderboard");
+            }}
           >
             Leaderboard
           </button>
-          <button type="button" className={styles.tab} data-active={tab === "mine"} onClick={() => setTab("mine")}>
+          <button
+            type="button"
+            className={styles.tab}
+            data-active={tab === "mine"}
+            onClick={() => {
+              hapticSelection();
+              setTab("mine");
+            }}
+          >
             My Stats
           </button>
         </div>
-        <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>
-          ✕
-        </button>
       </div>
 
       {tab === "leaderboard" ? (
@@ -69,7 +82,10 @@ export function LeaderboardScreen({ sessionToken, profile, onClose }: Leaderboar
                   type="button"
                   className={styles.scopeButton}
                   data-active={scope === s}
-                  onClick={() => setScope(s)}
+                  onClick={() => {
+                    hapticSelection();
+                    setScope(s);
+                  }}
                 >
                   {SCOPE_LABEL[s]}
                 </button>
@@ -127,8 +143,24 @@ export function LeaderboardScreen({ sessionToken, profile, onClose }: Leaderboar
               </div>
               <div className={styles.statRow}>
                 <span>Daily streak</span>
-                <span className={styles.statValue}>{profile.streak} 🔥</span>
+                <span className={styles.statValue}>
+                  {profile.streak} <Flame size={16} aria-hidden="true" />
+                </span>
               </div>
+              {profile.bestRun && (
+                <button
+                  type="button"
+                  className={styles.shareButton}
+                  onClick={() => {
+                    hapticSelection();
+                    shareViaTelegram(
+                      `My best score in NONET is ${profile.bestRun?.score.toLocaleString()}! Can you beat it? 🧩`,
+                    );
+                  }}
+                >
+                  <Share2 size={16} aria-hidden="true" /> Share my best score
+                </button>
+              )}
             </>
           )}
         </div>

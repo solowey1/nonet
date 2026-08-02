@@ -22,10 +22,17 @@ interface HandTrayProps {
 
 export function HandTray({ hand, cellSize, draggingSlot, onGrab }: HandTrayProps) {
   const traySlotCell = cellSize * TRAY_SCALE;
-  const trayHeight = Math.max(44, traySlotCell * MAX_PIECE_DIM);
+  // Reserves whichever axis actually varies per hand: height in portrait's
+  // row layout, width in landscape's column layout (see HandTray.module.css)
+  // — both read the same number, so it's exposed as one custom property
+  // rather than computed twice.
+  const trayReserve = Math.max(44, traySlotCell * MAX_PIECE_DIM);
 
   return (
-    <div className={styles.tray} style={{ minHeight: trayHeight }}>
+    <div
+      className={styles.tray}
+      style={{ minHeight: trayReserve, ["--nonet-tray-reserve" as string]: `${trayReserve}px` }}
+    >
       {([0, 1, 2] as const).map((slot) => {
         const piece = hand[slot];
         return (

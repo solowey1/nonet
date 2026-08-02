@@ -1,6 +1,7 @@
 import { useCallback, useState, type RefObject } from "react";
 import { canPlace, detectFullUnits, placePiece, unitsMask } from "@nonet/engine";
 import { useGameStore } from "../store/gameStore.js";
+import { hapticNotification } from "../telegram/webapp.js";
 import { BOARD_SIZE, clamp, pointToFractionalCell } from "../utils/geometry.js";
 import type { DragState, GhostPreview } from "../types.js";
 
@@ -25,6 +26,15 @@ export function useDragPlacement(boardRef: RefObject<HTMLDivElement | null>) {
         if (!boardEl || !piece) return null;
 
         const rect = boardEl.getBoundingClientRect();
+        // Clamping the snapped row/col below keeps a piece whose *center* is
+        // over the board fully on-grid even near an edge — but without this
+        // check, it also clamps a pointer that's left the board entirely
+        // (e.g. still over the hand tray) onto some in-bounds cell, letting
+        // a release there both show a ghost and place the piece nowhere near
+        // the pointer. No ghost, no placement, once the pointer itself is
+        // outside the board's own rect.
+        if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return null;
+
         const { row: fRow, col: fCol } = pointToFractionalCell(rect, x, y);
         const row = clamp(Math.round(fRow - piece.h / 2), 0, BOARD_SIZE - piece.h);
         const col = clamp(Math.round(fCol - piece.w / 2), 0, BOARD_SIZE - piece.w);
@@ -63,6 +73,8 @@ export function useDragPlacement(boardRef: RefObject<HTMLDivElement | null>) {
         const ghost = computeGhost(event.clientX, event.clientY);
         if (ghost?.legal) {
           useGameStore.getState().place(slot, ghost.row, ghost.col);
+        } else {
+          hapticNotification("error");
         }
         setDrag(null);
       }
