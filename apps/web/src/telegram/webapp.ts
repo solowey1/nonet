@@ -7,6 +7,8 @@
  * dragging a piece downward closes the app.
  */
 import { PREMIUM_THEMES, type ThemePalette } from "@nonet/shared";
+import i18next, { isSupportedLanguage, resolveLanguage, type LanguageMode } from "../i18n/index.js";
+export type { LanguageMode };
 
 export type InvoiceStatus = "paid" | "cancelled" | "failed" | "pending";
 export type HapticImpactStyle = "light" | "medium" | "heavy" | "rigid" | "soft";
@@ -67,6 +69,7 @@ type TelegramEventType =
 
 interface TelegramWebApp {
   initData: string;
+  initDataUnsafe?: { user?: { language_code?: string } };
   themeParams: ThemeParams;
   colorScheme: "light" | "dark";
   isFullscreen?: boolean;
@@ -108,6 +111,11 @@ export function getTelegramInitData(): string | null {
   return initData ? initData : null;
 }
 
+/** BCP-47-ish language tag Telegram reports for the user (e.g. "ru", "en") — used to auto-pick a locale in "Auto" mode (§19 Language setting). */
+export function getTelegramLanguageCode(): string | null {
+  return getWebApp()?.initDataUnsafe?.user?.language_code ?? null;
+}
+
 export async function bootstrapTelegramWebApp(): Promise<void> {
   // Both preferences work with or without a real Telegram WebView (via
   // CloudStorage's localStorage fallback) — resolved before any
@@ -116,6 +124,7 @@ export async function bootstrapTelegramWebApp(): Promise<void> {
   // effect before Telegram's own live sync below could flash the wrong
   // colors first.
   await loadThemePreference();
+  await loadLanguagePreference();
   void loadHapticsPreference();
 
   const webApp = getWebApp();
@@ -455,6 +464,36 @@ export function hapticNotification(type: HapticNotificationType): void {
 export function hapticSelection(): void {
   if (!hapticsEnabled) return;
   getWebApp()?.HapticFeedback?.selectionChanged();
+}
+
+// --- Language (§19) ---
+// "auto" (default) follows Telegram's own `language_code` for the user;
+// an explicit choice overrides it. Persisted via CloudStorage, same pattern
+// as haptics/theme above.
+
+const LANGUAGE_PREFERENCE_KEY = "languageMode";
+let languageMode: LanguageMode = "auto";
+
+function applyLanguageMode(): void {
+  const resolved = languageMode === "auto" ? resolveLanguage(getTelegramLanguageCode()) : languageMode;
+  void i18next.changeLanguage(resolved);
+}
+
+/** Reads any previously-chosen language (CloudStorage, or its localStorage fallback outside Telegram) and applies it. */
+export async function loadLanguagePreference(): Promise<void> {
+  const stored = await cloudGetItem(LANGUAGE_PREFERENCE_KEY);
+  languageMode = stored && (stored === "auto" || isSupportedLanguage(stored)) ? (stored as LanguageMode) : "auto";
+  applyLanguageMode();
+}
+
+export function getLanguageMode(): LanguageMode {
+  return languageMode;
+}
+
+export function setLanguageMode(mode: LanguageMode): void {
+  languageMode = mode;
+  cloudSetItem(LANGUAGE_PREFERENCE_KEY, mode);
+  applyLanguageMode();
 }
 
 // --- Share cards (§12) ---

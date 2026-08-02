@@ -11,27 +11,17 @@
 
 .hudRow {
   display: flex;
-  align-items: center;
+  /* Both children get their own matching top padding (see .controlsArea)
+     instead of relying on flex centering against ScoreHud's internal
+     padding — centering a shorter, unpadded sibling next to a taller,
+     padded one doesn't guarantee it clears the same safe boundary; it can
+     center right into the unsafe zone Telegram's own fullscreen chevron/
+     menu controls occupy (§19). */
+  align-items: flex-start;
 }
 
 .hudRow > :first-child {
   flex: 1;
-}
-
-.shopButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 36px;
-  margin-right: 12px;
-  padding: 6px 14px;
-  border-radius: var(--nonet-radius);
-  border: 1px solid color-mix(in srgb, var(--nonet-text) 20%, transparent);
-  background: transparent;
-  color: var(--nonet-text);
-  font-size: 0.85rem;
-  cursor: pointer;
 }
 
 .boardWrap {
@@ -54,6 +44,12 @@
 .controlsArea {
   display: flex;
   align-items: center;
+  gap: 8px;
+  /* Matches ScoreHud's own `.hud` top padding exactly (see ScoreHud.module.css)
+     so both halves of `.hudRow` start at the same Y — "level with Score/Best",
+     not centered against a taller sibling and drifting into Telegram's own
+     fullscreen chevron/menu controls above the safe boundary (§19). */
+  padding: calc(10px + var(--nonet-safe-top)) 16px 6px 0;
 }
 
 .inventoryArea {
@@ -61,12 +57,18 @@
 }
 
 /*
- * Landscape (§12 request): board centered, score+hints on the left, the hand
- * tray+controls on the right — a 3-column grid replaces the portrait flex
- * column. `.hudRow` (score+controls, one row in portrait) switches to
+ * Landscape (§12/§19): board centered, score+power-ups on the left, hint+
+ * hand tray+controls on the right — a 3-column grid replaces the portrait
+ * flex column. `.hudRow` (score+controls, one row in portrait) switches to
  * `display: contents` so its two children can be placed independently on
  * opposite sides without duplicating either subtree; `board` spans all 3
  * rows so it can center itself vertically across the whole height.
+ *
+ * Power-ups moved to the left column, under score (§19: "boosts" should sit
+ * left of the board, in a column) — InventoryBar itself switches to a
+ * vertical layout with the count to the right of each icon in this
+ * orientation (see InventoryBar.tsx's `landscape:` classes), so this only
+ * needs to place the whole bar in the right grid cell.
  */
 @media (orientation: landscape) {
   .app {
@@ -75,8 +77,8 @@
     grid-template-rows: auto auto 1fr;
     grid-template-areas:
       "score board controls"
-      "hint board inventory"
-      "hint board tray";
+      "inventory board hint"
+      "inventory board tray";
     align-items: stretch;
     max-width: none;
     margin: 0;
@@ -98,13 +100,13 @@
   .controlsArea {
     grid-area: controls;
     justify-content: flex-end;
-    padding-top: calc(10px + var(--nonet-safe-top));
   }
 
   .inventoryArea {
     grid-area: inventory;
     display: flex;
     align-items: flex-start;
+    padding: 4px 4px 4px 12px;
   }
 
   .hint {
@@ -140,17 +142,6 @@
 
 .bootError {
   color: var(--nonet-danger);
-}
-
-.bootRetry {
-  min-height: 44px;
-  padding: 8px 24px;
-  border-radius: var(--nonet-radius);
-  border: none;
-  background: var(--nonet-accent);
-  color: #0b0e13;
-  font-weight: 700;
-  cursor: pointer;
 }
 
 .hint {

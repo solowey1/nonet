@@ -1215,3 +1215,152 @@ firing before returning to the menu. All 21 passed. 113 engine tests, 57
 API tests (one new: crediting a purchased theme SKU as a permanent
 inventory unlock), `tsc --noEmit` across every package, and `vite build`
 all pass/succeed.
+
+# §19 continued — shadcn primitives, i18n, and a dozen UX fixes
+
+## The user ran `shadcn init` locally; `shadcn add` is still blocked here
+
+The user ran the requested `npx shadcn@latest init --preset b4zjJzewi
+--template vite` on their own machine (where `ui.shadcn.com` isn't
+blocked) and pushed the result: `components.json` (style `base-nova`,
+base color zinc), Tailwind v4 via `@tailwindcss/vite`, `src/index.css`
+with the full oklch design-token set, `src/lib/utils.ts`'s `cn()` helper,
+and `@base-ui/react` (Base UI — the same team's successor to Radix;
+this preset uses it instead of `@radix-ui/*`) as a dependency. That got
+the *scaffold* in place, but `shadcn add <component>` (Button, Dialog,
+Switch, Checkbox, ...) still needs the same blocked registry host —
+confirmed by re-running it in this sandbox, same `CONNECT ... 403` as
+`init` hit before the user's local run. So every primitive under
+`src/components/ui/` (`button`, `card`, `switch`, `checkbox`, `dialog`,
+`label`, `badge`, `separator`, `input`, `tabs`) was hand-authored here
+against the *real* pushed tokens and the real `@base-ui/react` API
+(`Switch.Root`/`Thumb`, `Checkbox.Root`/`Indicator`, `Dialog.Root`/
+`Trigger`/`Portal`/`Backdrop`/`Popup`/`Title`/`Close`, `Tabs.Root`/`List`/
+`Tab`/`Panel`) — not registry-fetched, but no longer guessed at unfamiliar
+tokens either, unlike the earlier TON Connect-era blocker. Swapping any of
+these for the real `shadcn add` output later is a compatible drop-in
+(same prop shapes, same Tailwind class conventions) whenever the user
+wants exact registry parity.
+
+## A hidden portal z-index bug the primitives themselves exposed
+
+Every full-page screen (Shop/Leaderboard/Settings) sits at `z-[600]`
+(GameOverOverlay at `z-[500]`) so it renders above the menu underneath.
+Base UI's `Dialog.Portal` renders to `document.body` — a *sibling* of
+those `z-[600]` elements, not a descendant — so the dialog's own z-index
+has to out-rank them numerically; nesting later in the DOM doesn't help
+once portaled. The hand-authored `Dialog` initially used Tailwind's
+stock `z-50`, which is *lower* than `z-[600]`: opening the Shop's theme
+preview dialog rendered it, visually, on top — but the Shop's own
+list items underneath still intercepted every pointer event, since they
+were higher in the actual stacking order. Playwright caught this
+directly (a click meant for the dialog's "Light" toggle kept resolving
+to the row underneath instead) rather than it only surfacing as a subtle
+visual/interaction bug in real testing. Fixed by moving the Dialog's
+backdrop and popup to `z-[700]`, comfortably above every screen that
+might open one.
+
+## i18n: `en`/`ru`, Telegram `language_code` auto-detect, override persisted like haptics/theme
+
+Added `i18next`/`react-i18next`. `en.ts`/`ru.ts` are plain (non-`as const`)
+objects — `ru`'s type is `typeof en`, which enforces identical *keys*
+across locales (TypeScript widens `as const`-free string literals to
+`string`) so a missing translation is a compile error, not a silent
+English fallback in production. "Auto" (default) resolves from Telegram's
+`initDataUnsafe.user.language_code`; an explicit choice in Settings
+overrides it, persisted via CloudStorage exactly like the existing
+haptics/theme preferences (`webapp.ts` gained a parallel `languageMode`
+section). `loadLanguagePreference()`/`loadHapticsPreference()` now both
+run *unconditionally* in `bootstrapTelegramWebApp()` rather than being
+skipped when there's no real Telegram WebView — the old haptics-only gate
+predated CloudStorage's own localStorage fallback and no longer made
+sense once a second preference needed the same plain-browser behavior.
+Every user-facing string in the app (including aria-labels, the boot
+screen, and the floating combo/perfect-clear popup) now routes through
+`t()` — verified with an actual runtime language switch in Playwright
+(Settings → Русский → main menu re-renders as Продолжить/Новая игра/...
+live, no reload).
+
+## Twelve specific UX fixes from user feedback + screenshots
+
+- **Home/Shop buttons overlapping Telegram's fullscreen controls**: root
+  cause was `.controlsArea` (App.module.css) having no top padding of its
+  own, relying on `align-items: center` to vertically center it against
+  `.scoreArea`'s *padded* height — centering a shorter unpadded sibling
+  inside a taller padded one doesn't guarantee it clears the same safe
+  boundary; it can center right into the region Telegram's own chevron/
+  menu controls occupy in fullscreen. Fixed by giving `.controlsArea` the
+  exact same top padding as ScoreHud's own `.hud` rule and switching
+  `.hudRow` to `align-items: flex-start` — both halves now start at the
+  same Y, not just get centered against each other.
+- **In-game Shop button's text label**: removed — icon-only now, matching
+  the request that the icon already says enough. Kept `aria-label="Shop"`
+  for accessibility (confirmed via Playwright: empty text content, a real
+  `aria-label` attribute).
+- **Piece grab hit-area inconsistent per shape**: a 1-cell piece's
+  clickable region used to be exactly its own tiny rendered box (plus a
+  44px floor); a 5-cell piece's was proportionally huge. Rather than
+  resizing `.slot` itself to the max-piece-footprint (which would blow
+  out the tray's flex width — three 5x5-sized slots side by side don't
+  fit a narrow phone), added a separate absolutely-centered `.hitArea`
+  overlay per piece, fixed to the same `trayReserve` (5x5-cell-equivalent,
+  already computed for the tray's own jump-prevention) size regardless of
+  the piece's actual shape. The *visible* piece is unchanged — a 1x1 still
+  looks small — only the invisible touch target is now uniform. Verified:
+  all three hand slots report the identical hit-area width regardless of
+  which piece occupies them.
+- **Power-ups repositioned**: landscape moves the whole `InventoryBar`
+  into the left grid column (under score, was previously on the right
+  with controls/tray) with `hint` swapping to the right in its place;
+  `InventoryBar` itself uses Tailwind's built-in `landscape:`/`portrait:`
+  variants to flip from a horizontal row (count *below* each icon,
+  non-overlapping — the old design overlaid the count as a badge on the
+  icon's corner) to a vertical column (count to the *right* of each icon,
+  since a 3-4 digit count wouldn't fit under a narrow column icon).
+- **Counts ≥1000 abbreviate** as "1k"/"1.2k" (or "1к"/"1.2к" in Russian) —
+  `formatCount()`, with the suffix itself translated (`common.thousandsSuffix`)
+  rather than hardcoded, so it's correct in either language.
+- **Monochrome theme** added to `packages/shared`'s `PREMIUM_THEMES` (a
+  grayscale-only palette, no hue at all) — seeds automatically via the
+  same generic shop pipeline as Sunset/Ocean/Neon, no new code path.
+- **Haptics toggle → shadcn `Switch`**; **Leaderboard's "Pure only" →
+  shadcn `Checkbox`** — both hand-authored against `@base-ui/react`'s
+  `Switch.Root`/`Thumb` and `Checkbox.Root`/`Indicator`, no native
+  `<input type="checkbox">` left visible anywhere in the app.
+- **Button text color**: the `Button` component's default variant reads
+  `bg-primary text-primary-foreground` from the pushed tokens — verified
+  `--primary-foreground` really does resolve near-white (oklch L=0.977),
+  not the old hardcoded `#0b0e13` (near-black) still sitting in two
+  now-deleted CSS modules (`ShopOverlay.module.css`'s buy button,
+  `App.module.css`'s now-superseded `.bootRetry`).
+- **Star icon colors**: every Stars-price icon now explicitly
+  `fill="#FFC335" stroke="#E98615"` (a small `StarIcon` wrapper in
+  ShopOverlay, reused inline in GameOverOverlay's revive button) rather
+  than inheriting `currentColor`.
+- **Theme preview dialog**: clicking a theme *item* in the Shop (not just
+  its buy button) opens a dialog with a Light/Dark toggle and a static
+  mock board+HUD painted in that theme's actual palette values before any
+  purchase. Since every premium theme is authored as a single (dark-
+  leaning) palette, not a light/dark pair, the "Light" preview is
+  *derived* on the fly (`derivePreviewPalette`: background/board/empty-
+  cell lightened toward white, text darkened toward black) rather than
+  requiring every theme to be double-authored — an approximation for
+  preview purposes only; the theme itself always applies exactly as
+  authored regardless of the app's own light/dark mode.
+
+## Verified with headless Chromium against real dev servers (Postgres, API, mocked Telegram WebApp)
+
+17 checks: main-menu list order/labels; Settings shows Monochrome +
+locked-icon premium themes; haptics uses a real `[role=switch]`, zero
+native checkboxes remain; switching language to Russian re-renders the
+*entire* main menu live; primary button text resolves to a light color,
+not black; Star icons carry the exact `#FFC335`/`#E98615` fill/stroke;
+clicking a Shop theme item opens the preview dialog (light/dark toggle +
+25-cell mock board present) — this is what caught the z-index bug above;
+all three hand-tray pieces report an identical hit-area width regardless
+of shape; the in-game Home button's top position matches the Score
+label's within 30px (not floating above it into the unsafe zone); the
+in-game Shop button has empty text content with a real `aria-label`.
+113 engine tests, 58 API tests (one new: the Monochrome theme SKU seeds
+and is listed), `tsc --noEmit` across every package, and `vite build`
+all pass/succeed.

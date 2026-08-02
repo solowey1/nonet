@@ -48,6 +48,7 @@ describe("GET /api/shop", () => {
     expect(bySku.theme_sunset).toMatchObject({ starsAmount: 60, contents: { theme_sunset: 1 } });
     expect(bySku.theme_ocean).toMatchObject({ starsAmount: 60, contents: { theme_ocean: 1 } });
     expect(bySku.theme_neon).toMatchObject({ starsAmount: 60, contents: { theme_neon: 1 } });
+    expect(bySku.theme_monochrome).toMatchObject({ starsAmount: 60, contents: { theme_monochrome: 1 } });
   });
 });
 

@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { BOARD_SIZE, type Board as BoardBits } from "@nonet/engine";
 import type { TargetingState } from "../hooks/usePowerupTargeting.js";
 import type { ClearEvent } from "../store/gameStore.js";
@@ -30,6 +31,7 @@ export const Board = forwardRef<HTMLDivElement, BoardProps>(function Board(
   { board, cellFamilies, ghost, powerupPreview, clearEvent, onPointerDown },
   ref,
 ) {
+  const { t } = useTranslation();
   const [clearing, setClearing] = useState<Map<number, ClearingCell> | null>(null);
 
   useEffect(() => {
@@ -92,7 +94,7 @@ export const Board = forwardRef<HTMLDivElement, BoardProps>(function Board(
   }
 
   return (
-    <div ref={ref} className={styles.board} role="grid" aria-label="NONET board" onPointerDown={onPointerDown}>
+    <div ref={ref} className={styles.board} role="grid" aria-label={t("game.boardLabel")} onPointerDown={onPointerDown}>
       {cells}
     </div>
   );
