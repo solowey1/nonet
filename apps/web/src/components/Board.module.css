@@ -30,12 +30,27 @@
   background: var(--piece-color, var(--nonet-cell-filled));
 }
 
+/*
+ * A real `border` shrinks *this* cell's padding box on the bordered side
+ * only (box-sizing: border-box, set globally in theme.css) — and
+ * `.cellInner` is absolutely positioned via `inset` relative to that padding
+ * box, so it would render visibly narrower/shorter on exactly the cells
+ * touching a 3x3 divider, nowhere else. That asymmetric shrink is what
+ * produced the jagged look. `box-shadow` paints the same line without
+ * touching the box model, so every cell stays identically sized.
+ */
 .cell[data-border-right="true"] {
-  border-right: 2px solid var(--nonet-block-divider);
+  box-shadow: inset -2px 0 0 0 var(--nonet-block-divider);
 }
 
 .cell[data-border-bottom="true"] {
-  border-bottom: 2px solid var(--nonet-block-divider);
+  box-shadow: inset 0 -2px 0 0 var(--nonet-block-divider);
+}
+
+.cell[data-border-right="true"][data-border-bottom="true"] {
+  box-shadow:
+    inset -2px 0 0 0 var(--nonet-block-divider),
+    inset 0 -2px 0 0 var(--nonet-block-divider);
 }
 
 /* Ghost preview: the shape a dragged piece would occupy at its snapped position. */

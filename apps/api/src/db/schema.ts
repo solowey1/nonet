@@ -163,6 +163,31 @@ export const dailyStats = pgTable(
     runs: integer("runs").notNull().default(0),
     bestScore: integer("best_score").notNull().default(0),
     streak: integer("streak").notNull().default(0),
+    // Both added for achievements (§19 round 4) — the daily-score-streak and
+    // rolling-week conditions need the day's *cumulative* score and perfect
+    // clears, not just the best single run `bestScore` already tracked.
+    totalScore: integer("total_score").notNull().default(0),
+    perfectClears: integer("perfect_clears").notNull().default(0),
   },
   (table) => [primaryKey({ columns: [table.userId, table.day] })],
+);
+
+export const userAchievements = pgTable(
+  "user_achievements",
+  {
+    userId: bigint("user_id", { mode: "bigint" })
+      .notNull()
+      .references(() => users.id),
+    achievementId: text("achievement_id").notNull(),
+    // 0 for never earned; capped at 1 for one-time achievements, uncapped
+    // for repeatable ones (§19 round 4).
+    timesCompleted: integer("times_completed").notNull().default(0),
+    lastCompletedAt: timestamp("last_completed_at", { withTimezone: true }),
+    // Condition-specific bookkeeping that can't be cheaply re-derived on
+    // every check — currently just `{ lastAwardedDay }`, the day-gate that
+    // stops a sustained repeatable condition (a week-long streak that keeps
+    // holding) from re-awarding on every single evaluation.
+    progress: jsonb("progress").notNull().default(sql`'{}'::jsonb`),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.achievementId] })],
 );

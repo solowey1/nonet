@@ -11,6 +11,7 @@ import type { FastifyInstance } from "fastify";
 import { db } from "../db/client.js";
 import { inventoryLedger, runs, users } from "../db/schema.js";
 import { env } from "../env.js";
+import { evaluateRunAchievements } from "../services/achievements.js";
 import { validateConsumeTokens } from "../services/inventory.js";
 import { bytesToHex, hexToBytes } from "../utils/hex.js";
 import { randomUuidV7 } from "../utils/uuid.js";
@@ -132,6 +133,7 @@ export async function runRoutes(app: FastifyInstance) {
     }
 
     let rank: number | null = null;
+    let unlockedAchievements: string[] = [];
     if (verified) {
       const finalScore = result.valid ? result.score : 0;
       const [countRow] = await db
@@ -139,6 +141,17 @@ export async function runRoutes(app: FastifyInstance) {
         .from(runs)
         .where(and(eq(runs.verified, true), gt(runs.score, finalScore)));
       rank = (countRow?.count ?? 0) + 1;
+
+      // §9: same trust boundary as the rank/leaderboard bump above — only a
+      // replay-verified run can earn achievement rewards.
+      const unlocked = await evaluateRunAchievements(db, userId, {
+        score: result.score,
+        maxCombo: result.finalState.maxComboLevel,
+        unitsCleared: result.finalState.unitsCleared,
+        perfectClears: result.finalState.perfectClears,
+        usedPowerups,
+      });
+      unlockedAchievements = unlocked.map((u) => u.id);
     }
 
     // Every milestone drop actually earned this run — informational only,
@@ -155,6 +168,7 @@ export async function runRoutes(app: FastifyInstance) {
         verified,
         drops,
         rank,
+        unlockedAchievements,
       }),
     );
   });

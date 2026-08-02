@@ -2,6 +2,7 @@ import fastifyRateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import { authPlugin } from "./plugins/auth.js";
 import { env } from "./env.js";
+import { achievementsRoutes } from "./routes/achievements.js";
 import { internalRoutes } from "./routes/internal.js";
 import { inventoryRoutes } from "./routes/inventory.js";
 import { leaderboardRoutes } from "./routes/leaderboard.js";
@@ -30,6 +31,7 @@ export function buildApp(): FastifyInstance {
   app.register(leaderboardRoutes);
   app.register(profileRoutes);
   app.register(tonconnectRoutes);
+  app.register(achievementsRoutes);
 
   app.get("/api/healthz", async () => ({ ok: true }));
 

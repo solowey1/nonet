@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Play, RotateCcw, Settings, Store, Trophy } from "lucide-react";
+import { Award, Play, RotateCcw, Settings, Store, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useGameStore } from "../store/gameStore.js";
 import { hapticSelection } from "../telegram/webapp.js";
@@ -20,6 +20,7 @@ export function MainMenu() {
   const goToLeaderboard = useGameStore((s) => s.goToLeaderboard);
   const goToShop = useGameStore((s) => s.goToShop);
   const goToSettings = useGameStore((s) => s.goToSettings);
+  const goToAchievements = useGameStore((s) => s.goToAchievements);
 
   const hasActiveRun = runId !== null;
 
@@ -108,6 +109,18 @@ export function MainMenu() {
         >
           <Store className="h-5 w-5" aria-hidden="true" />
           {t("mainMenu.shop")}
+        </Button>
+        <Button
+          size="lg"
+          variant="secondary"
+          className="justify-start"
+          onClick={() => {
+            hapticSelection();
+            goToAchievements();
+          }}
+        >
+          <Award className="h-5 w-5" aria-hidden="true" />
+          {t("mainMenu.achievements")}
         </Button>
         <Button
           size="lg"

@@ -1,5 +1,6 @@
 import {
   type Action,
+  type AchievementsResponse,
   type InventoryConsumeResponse,
   type LeaderboardResponse,
   type PowerupKind,
@@ -10,6 +11,7 @@ import {
   type ShopInvoiceResponse,
   type ShopResponse,
   type WalletLinkResponse,
+  achievementsResponseSchema,
   inventoryConsumeResponseSchema,
   leaderboardResponseSchema,
   profileResponseSchema,
@@ -107,6 +109,10 @@ export function postInventoryConsume(
 
 export function getShop(): Promise<ShopResponse> {
   return getJson("/shop", null, shopResponseSchema);
+}
+
+export function getAchievements(sessionToken: string): Promise<AchievementsResponse> {
+  return getJson("/achievements", sessionToken, achievementsResponseSchema);
 }
 
 export function postShopInvoice(sessionToken: string, sku: string, runId?: string): Promise<ShopInvoiceResponse> {
