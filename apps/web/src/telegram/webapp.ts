@@ -160,7 +160,10 @@ function applyThemeParams(): void {
   if (t.section_bg_color) root.setProperty("--nonet-cell-empty", t.section_bg_color);
   if (t.text_color) root.setProperty("--nonet-text", t.text_color);
   if (t.hint_color) root.setProperty("--nonet-text-dim", t.hint_color);
-  if (t.button_color) root.setProperty("--nonet-accent", t.button_color);
+  if (t.button_color) {
+    root.setProperty("--nonet-accent", t.button_color);
+    root.setProperty("--nonet-button-bg", t.button_color);
+  }
   if (t.destructive_text_color) root.setProperty("--nonet-danger", t.destructive_text_color);
   root.setProperty("color-scheme", webApp.colorScheme);
   // Keep Telegram's own native header/background chrome pinned to bg_color
@@ -360,6 +363,7 @@ function paletteFor(mode: ThemeMode): ThemePalette | null {
 
 function applyPalette(p: ThemePalette): void {
   const root = document.documentElement.style;
+  const isLight = p === LIGHT_PALETTE;
   root.setProperty("--nonet-bg", p.bg);
   root.setProperty("--nonet-board", p.board);
   root.setProperty("--nonet-cell-empty", p.cellEmpty);
@@ -369,11 +373,16 @@ function applyPalette(p: ThemePalette): void {
   root.setProperty("--nonet-text", p.text);
   root.setProperty("--nonet-text-dim", p.textDim);
   root.setProperty("--nonet-danger", p.danger);
-  root.setProperty("color-scheme", p === LIGHT_PALETTE ? "light" : "dark");
+  // Every palette's accent reads fine with fixed-dark button text (theme.css's
+  // `--nonet-button-fg`) *except* light's — see theme.css's own comment.
+  root.setProperty("--nonet-button-bg", isLight ? LIGHT_BUTTON_BG : p.accent);
+  root.setProperty("color-scheme", isLight ? "light" : "dark");
   const webApp = getWebApp();
   webApp?.setHeaderColor?.(p.bg);
   webApp?.setBackgroundColor?.(p.bg);
 }
+
+const LIGHT_BUTTON_BG = "#84cc16";
 
 const PALETTE_PROPERTIES = [
   "--nonet-bg",
@@ -385,6 +394,7 @@ const PALETTE_PROPERTIES = [
   "--nonet-text",
   "--nonet-text-dim",
   "--nonet-danger",
+  "--nonet-button-bg",
   "color-scheme",
 ] as const;
 

@@ -64,7 +64,7 @@ export function MainMenu() {
         <Button
           size="lg"
           disabled={!hasActiveRun}
-          className="justify-start text-white"
+          className="justify-start"
           onClick={() => {
             hapticSelection();
             continueRun();

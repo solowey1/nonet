@@ -73,7 +73,7 @@ export function GameOverOverlay({ game, finishResult, revivePending, onRestart, 
             </>
           )}
         </Button>
-        <Button size="lg" className="text-white" onClick={onRestart}>
+        <Button size="lg" onClick={onRestart}>
           {t("gameOver.playAgain")}
         </Button>
       </div>
