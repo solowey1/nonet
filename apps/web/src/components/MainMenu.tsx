@@ -1,58 +1,22 @@
-import { useEffect, useState } from "react";
-import type { PowerupKind } from "@nonet/shared";
-import { postWalletLink } from "../api/client.js";
+import { Play, RotateCcw, Settings, Store, Trophy } from "lucide-react";
 import { useGameStore } from "../store/gameStore.js";
-import { hapticSelection, isHapticsEnabled, setHapticsEnabled } from "../telegram/webapp.js";
-import { currentWalletAddress, disconnectWallet, onWalletChange, openWalletConnectModal } from "../telegram/tonConnect.js";
-import { LeaderboardScreen } from "./LeaderboardScreen.js";
-import { ShopOverlay } from "./ShopOverlay.js";
+import { hapticSelection } from "../telegram/webapp.js";
+import { POWERUP_ICON } from "../utils/powerupIcon.js";
 import styles from "./MainMenu.module.css";
 
-function formatWalletAddress(address: string): string {
-  return address.length > 10 ? `${address.slice(0, 4)}…${address.slice(-4)}` : address;
-}
+const POWERUP_ORDER = ["pencil", "eraser", "rocket", "bomb", "fill"] as const;
 
-const POWERUPS: ReadonlyArray<{ kind: PowerupKind; emoji: string }> = [
-  { kind: "pencil", emoji: "✏️" },
-  { kind: "eraser", emoji: "🧹" },
-  { kind: "rocket", emoji: "🚀" },
-  { kind: "bomb", emoji: "💣" },
-  { kind: "fill", emoji: "🪣" },
-];
-
+/** §19: Continue/New game, Leaderboard, Shop, Settings — a plain list, not the previous button grid. */
 export function MainMenu() {
   const runId = useGameStore((s) => s.runId);
   const gameStatus = useGameStore((s) => s.game.status);
   const inventory = useGameStore((s) => s.inventory);
   const profile = useGameStore((s) => s.profile);
-  const sessionToken = useGameStore((s) => s.sessionToken);
-  const refreshInventory = useGameStore((s) => s.refreshInventory);
   const newRun = useGameStore((s) => s.newRun);
   const continueRun = useGameStore((s) => s.continueRun);
-  const loadProfile = useGameStore((s) => s.loadProfile);
-
-  const [shopOpen, setShopOpen] = useState(false);
-  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
-  // Read once on mount rather than kept in the store — this is a device
-  // preference (synced via Telegram CloudStorage, see webapp.ts), not game
-  // state, and by the time this screen can render, bootstrap's own
-  // (fire-and-forget) preference load has almost always already resolved.
-  const [hapticsOn, setHapticsOn] = useState(() => isHapticsEnabled());
-  const [walletAddress, setWalletAddress] = useState<string | null>(() => currentWalletAddress());
-  const [walletBusy, setWalletBusy] = useState(false);
-
-  // TonConnectUI fires once immediately with whatever session it already
-  // restored on load (or null), then again on every connect/disconnect —
-  // each firing is persisted server-side (§14 stub: address capture only).
-  useEffect(() => {
-    return onWalletChange((address) => {
-      setWalletAddress(address);
-      if (!sessionToken) return;
-      void postWalletLink(sessionToken, address)
-        .then(() => void loadProfile())
-        .catch((err) => console.error("failed to persist wallet link", err));
-    });
-  }, [sessionToken, loadProfile]);
+  const goToLeaderboard = useGameStore((s) => s.goToLeaderboard);
+  const goToShop = useGameStore((s) => s.goToShop);
+  const goToSettings = useGameStore((s) => s.goToSettings);
 
   const hasActiveRun = runId !== null;
 
@@ -66,115 +30,77 @@ export function MainMenu() {
         </div>
       )}
 
-      <button
-        type="button"
-        className={styles.primary}
-        onClick={() => {
-          hapticSelection();
-          if (hasActiveRun) continueRun();
-          else void newRun();
-        }}
-      >
-        {hasActiveRun ? (gameStatus === "gameover" ? "▶️ Resume (Game Over)" : "▶️ Continue") : "▶️ Play"}
-      </button>
-      {hasActiveRun && (
+      <div className={styles.inventoryStrip}>
+        {POWERUP_ORDER.map((kind) => {
+          const Icon = POWERUP_ICON[kind];
+          return (
+            <div key={kind} className={styles.invSlot}>
+              <Icon size={18} aria-hidden="true" />
+              <span className={styles.invCount}>{inventory[kind] ?? 0}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <nav className={styles.list}>
         <button
           type="button"
-          className={styles.secondaryText}
+          className={styles.listItem}
+          data-primary="true"
+          disabled={!hasActiveRun}
+          onClick={() => {
+            hapticSelection();
+            continueRun();
+          }}
+        >
+          <Play size={20} aria-hidden="true" />
+          {hasActiveRun && gameStatus === "gameover" ? "Resume (Game Over)" : "Continue"}
+        </button>
+        <button
+          type="button"
+          className={styles.listItem}
           onClick={() => {
             hapticSelection();
             void newRun();
           }}
         >
-          Start a new game instead
-        </button>
-      )}
-
-      <div className={styles.inventoryStrip}>
-        {POWERUPS.map(({ kind, emoji }) => (
-          <div key={kind} className={styles.invSlot}>
-            <span aria-hidden="true">{emoji}</span>
-            <span className={styles.invCount}>{inventory[kind] ?? 0}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className={styles.actions}>
-        <button
-          type="button"
-          className={styles.actionButton}
-          onClick={() => {
-            hapticSelection();
-            setLeaderboardOpen(true);
-          }}
-        >
-          🏆 Leaderboard
+          <RotateCcw size={20} aria-hidden="true" />
+          New game
         </button>
         <button
           type="button"
-          className={styles.actionButton}
+          className={styles.listItem}
           onClick={() => {
             hapticSelection();
-            setShopOpen(true);
+            goToLeaderboard();
           }}
         >
-          🛍 Shop
+          <Trophy size={20} aria-hidden="true" />
+          Leaderboard
         </button>
-      </div>
-
-      <label className={styles.settingsToggle}>
-        <input
-          type="checkbox"
-          checked={hapticsOn}
-          onChange={(e) => {
-            const next = e.target.checked;
-            setHapticsOn(next);
-            setHapticsEnabled(next);
-            if (next) hapticSelection(); // immediate confirmation that it's back on
+        <button
+          type="button"
+          className={styles.listItem}
+          onClick={() => {
+            hapticSelection();
+            goToShop();
           }}
-        />
-        Haptic feedback
-      </label>
-
-      <div className={styles.walletRow}>
-        {walletAddress ? (
-          <>
-            <span className={styles.walletAddress}>🔗 {formatWalletAddress(walletAddress)}</span>
-            <button
-              type="button"
-              className={styles.walletButton}
-              disabled={walletBusy}
-              onClick={() => {
-                hapticSelection();
-                setWalletBusy(true);
-                void disconnectWallet().finally(() => setWalletBusy(false));
-              }}
-            >
-              Disconnect
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            className={styles.walletButton}
-            disabled={walletBusy}
-            onClick={() => {
-              hapticSelection();
-              setWalletBusy(true);
-              void openWalletConnectModal().finally(() => setWalletBusy(false));
-            }}
-          >
-            🔗 Connect wallet for future Gram rewards
-          </button>
-        )}
-      </div>
-
-      {shopOpen && sessionToken && (
-        <ShopOverlay sessionToken={sessionToken} onClose={() => setShopOpen(false)} onPurchased={refreshInventory} />
-      )}
-      {leaderboardOpen && (
-        <LeaderboardScreen sessionToken={sessionToken} profile={profile} onClose={() => setLeaderboardOpen(false)} />
-      )}
+        >
+          <Store size={20} aria-hidden="true" />
+          Shop
+        </button>
+        <button
+          type="button"
+          className={styles.listItem}
+          onClick={() => {
+            hapticSelection();
+            goToSettings();
+          }}
+        >
+          <Settings size={20} aria-hidden="true" />
+          Settings
+        </button>
+      </nav>
     </div>
   );
 }

@@ -1,6 +1,9 @@
 import type { RefObject } from "react";
 import { BOARD_SIZE } from "@nonet/engine";
+import { POWERUP_ICON } from "../utils/powerupIcon.js";
 import styles from "./RocketGutters.module.css";
+
+const RocketIcon = POWERUP_ICON.rocket;
 
 const GUTTER_THICKNESS = 26;
 const GUTTER_GAP = 4;
@@ -68,7 +71,7 @@ export function RocketGutters({ boardRef, visible, onFire }: RocketGuttersProps)
           onClick={slot.fire}
           aria-label="fire rocket"
         >
-          🚀
+          <RocketIcon aria-hidden="true" size={14} />
         </button>
       ))}
     </>

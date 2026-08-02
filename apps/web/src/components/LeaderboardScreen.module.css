@@ -48,12 +48,14 @@
 }
 
 .close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-height: 44px;
   min-width: 44px;
   border: none;
   background: transparent;
   color: var(--nonet-text-dim);
-  font-size: 1.1rem;
   cursor: pointer;
 }
 
@@ -98,7 +100,7 @@
 .list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 16px 16px;
+  padding: 4px 16px calc(16px + var(--nonet-safe-bottom));
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -155,11 +157,18 @@
 }
 
 .statValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 .shareButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: 44px;
   margin-top: 8px;
   padding: 10px;

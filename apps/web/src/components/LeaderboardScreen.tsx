@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ArrowLeft, Flame, Share2 } from "lucide-react";
 import type { LeaderboardResponse, ProfileResponse } from "@nonet/shared";
 import { getLeaderboard } from "../api/client.js";
 import { hapticSelection, shareViaTelegram } from "../telegram/webapp.js";
@@ -42,6 +43,9 @@ export function LeaderboardScreen({ sessionToken, profile, onClose }: Leaderboar
   return (
     <div className={styles.overlay} role="dialog" aria-label="Leaderboard">
       <div className={styles.header}>
+        <button type="button" className={styles.close} aria-label="Back" onClick={onClose}>
+          <ArrowLeft size={20} aria-hidden="true" />
+        </button>
         <div className={styles.tabs}>
           <button
             type="button"
@@ -66,9 +70,6 @@ export function LeaderboardScreen({ sessionToken, profile, onClose }: Leaderboar
             My Stats
           </button>
         </div>
-        <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>
-          ✕
-        </button>
       </div>
 
       {tab === "leaderboard" ? (
@@ -142,7 +143,9 @@ export function LeaderboardScreen({ sessionToken, profile, onClose }: Leaderboar
               </div>
               <div className={styles.statRow}>
                 <span>Daily streak</span>
-                <span className={styles.statValue}>{profile.streak} 🔥</span>
+                <span className={styles.statValue}>
+                  {profile.streak} <Flame size={16} aria-hidden="true" />
+                </span>
               </div>
               {profile.bestRun && (
                 <button
@@ -155,7 +158,7 @@ export function LeaderboardScreen({ sessionToken, profile, onClose }: Leaderboar
                     );
                   }}
                 >
-                  📤 Share my best score
+                  <Share2 size={16} aria-hidden="true" /> Share my best score
                 </button>
               )}
             </>

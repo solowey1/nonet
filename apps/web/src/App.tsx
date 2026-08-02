@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Home, Store } from "lucide-react";
 import type { PowerupKind } from "@nonet/shared";
 import { Board } from "./components/Board.js";
 import { ComboPopup } from "./components/ComboPopup.js";
@@ -6,14 +7,17 @@ import { DragLayer } from "./components/DragLayer.js";
 import { GameOverOverlay } from "./components/GameOverOverlay.js";
 import { HandTray } from "./components/HandTray.js";
 import { InventoryBar } from "./components/InventoryBar.js";
+import { LeaderboardScreen } from "./components/LeaderboardScreen.js";
 import { MainMenu } from "./components/MainMenu.js";
 import { RocketGutters } from "./components/RocketGutters.js";
 import { ScoreHud } from "./components/ScoreHud.js";
+import { SettingsScreen } from "./components/SettingsScreen.js";
 import { ShopOverlay } from "./components/ShopOverlay.js";
 import { useCellSize } from "./hooks/useCellSize.js";
 import { useDragPlacement } from "./hooks/useDragPlacement.js";
 import { usePowerupTargeting, type TargetingState } from "./hooks/usePowerupTargeting.js";
 import { useGameStore } from "./store/gameStore.js";
+import { hideBackButton, initSettingsButton, showBackButton } from "./telegram/webapp.js";
 import styles from "./App.module.css";
 
 export function App() {
@@ -28,6 +32,21 @@ export function App() {
     // bootstrap runs once on mount — it's not meant to re-run on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Every screen but the menu is exactly one level deep, so the native
+  // BackButton always routes back to the menu (goToMenu also checkpoints if
+  // the screen being left is "game" — see gameStore). SettingsButton is a
+  // persistent control registered once, not toggled per screen.
+  useEffect(() => {
+    if (bootStatus !== "ready") return;
+    if (screen === "menu") hideBackButton();
+    else showBackButton(() => useGameStore.getState().goToMenu());
+  }, [screen, bootStatus]);
+
+  useEffect(() => {
+    if (bootStatus !== "ready") return;
+    initSettingsButton(() => useGameStore.getState().goToSettings());
+  }, [bootStatus]);
 
   if (bootStatus === "loading") {
     return (
@@ -49,7 +68,33 @@ export function App() {
     );
   }
 
-  return screen === "menu" ? <MainMenu /> : <Game boardRef={boardRef} />;
+  switch (screen) {
+    case "menu":
+      return <MainMenu />;
+    case "leaderboard":
+      return <LeaderboardPage />;
+    case "shop":
+      return <ShopPage />;
+    case "settings":
+      return <SettingsScreen />;
+    case "game":
+      return <Game boardRef={boardRef} />;
+  }
+}
+
+function LeaderboardPage() {
+  const sessionToken = useGameStore((s) => s.sessionToken);
+  const profile = useGameStore((s) => s.profile);
+  const goToMenu = useGameStore((s) => s.goToMenu);
+  return <LeaderboardScreen sessionToken={sessionToken} profile={profile} onClose={goToMenu} />;
+}
+
+function ShopPage() {
+  const sessionToken = useGameStore((s) => s.sessionToken);
+  const refreshInventory = useGameStore((s) => s.refreshInventory);
+  const goToMenu = useGameStore((s) => s.goToMenu);
+  if (!sessionToken) return null; // shouldn't happen once bootStatus is "ready"
+  return <ShopOverlay sessionToken={sessionToken} onClose={goToMenu} onPurchased={refreshInventory} />;
 }
 
 function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }) {
@@ -136,10 +181,10 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
         </div>
         <div className={styles.controlsArea}>
           <button type="button" className={styles.shopButton} onClick={goToMenu} aria-label="Back to menu">
-            🏠
+            <Home size={18} aria-hidden="true" />
           </button>
           <button type="button" className={styles.shopButton} onClick={() => setShopOpen(true)}>
-            🛍 Shop
+            <Store size={16} aria-hidden="true" /> Shop
           </button>
         </div>
       </div>

@@ -1,0 +1,168 @@
+.page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--nonet-bg);
+  z-index: 600;
+  animation: fade-in 200ms ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(10px + var(--nonet-safe-top)) 16px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--nonet-text) 12%, transparent);
+}
+
+.back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  border: none;
+  background: transparent;
+  color: var(--nonet-text-dim);
+  cursor: pointer;
+}
+
+.title {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 16px calc(16px + var(--nonet-safe-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--nonet-text-dim);
+}
+
+.themeGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.themeOption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 10px 14px;
+  border-radius: var(--nonet-radius);
+  border: 1px solid color-mix(in srgb, var(--nonet-text) 14%, transparent);
+  background: var(--nonet-cell-empty);
+  color: var(--nonet-text);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.themeOption span:first-of-type {
+  flex: 1;
+  text-align: left;
+}
+
+.themeOption[data-active="true"] {
+  border-color: var(--nonet-accent);
+  color: var(--nonet-accent);
+}
+
+.themeOption[data-locked="true"] {
+  color: var(--nonet-text-dim);
+}
+
+.swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 10px 14px;
+  border-radius: var(--nonet-radius);
+  background: var(--nonet-cell-empty);
+  cursor: pointer;
+}
+
+.toggleLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.walletRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.walletAddress {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--nonet-text-dim);
+}
+
+.walletButton,
+.walletConnectButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: var(--nonet-radius);
+  border: 1px solid color-mix(in srgb, var(--nonet-text) 20%, transparent);
+  background: transparent;
+  color: var(--nonet-text);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.walletConnectButton {
+  justify-content: center;
+  width: 100%;
+}
+
+.walletButton:disabled,
+.walletConnectButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

@@ -69,6 +69,10 @@
 
 .restart,
 .revive {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: 44px;
   min-width: 44px;
   padding: 10px 24px;
@@ -101,6 +105,9 @@
 }
 
 .share {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   min-height: 36px;
   margin-top: 4px;
   padding: 6px 14px;

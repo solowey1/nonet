@@ -154,6 +154,26 @@ describe("POST /api/internal/stars-payment", () => {
     expect(purchaseRow?.telegramPaymentChargeId).toBe("charge-ddd");
   });
 
+  it("credits a purchased theme SKU as a permanent inventory unlock (§19)", async () => {
+    await sessionFor(6);
+    await insertPendingPurchase({ userId: 6n, sku: "theme_sunset", starsAmount: 60, payload: "6:theme_sunset:fff" });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/internal/stars-payment",
+      headers: { ...SECRET_HEADERS, "content-type": "application/json" },
+      payload: { payload: "6:theme_sunset:fff", telegramPaymentChargeId: "charge-fff", starsAmount: 60 },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, alreadyProcessed: false });
+
+    const [balance] = await db
+      .select({ qty: inventoryBalance.qty })
+      .from(inventoryBalance)
+      .where(and(eq(inventoryBalance.userId, 6n), eq(inventoryBalance.item, "theme_sunset")));
+    expect(balance?.qty).toBe(1);
+  });
+
   it("is idempotent on a redelivered charge id — doesn't double-credit", async () => {
     await sessionFor(5);
     const [before] = await db

@@ -5,7 +5,19 @@
  * bootstraps sensible starting values.
  */
 import { drizzle } from "drizzle-orm/postgres-js";
+import { PREMIUM_THEMES, themeInventoryKey } from "@nonet/shared";
 import { shopSkus } from "./schema.js";
+
+const THEME_SKUS = PREMIUM_THEMES.map((theme) => ({
+  // Sku id and the granted inventory item are the same string here — themes
+  // are a one-time unlock (qty just needs to end up >= 1), not a consumable
+  // draw-down like the powerup SKUs below, so there's no need for them to differ.
+  sku: themeInventoryKey(theme.id),
+  title: theme.title,
+  description: theme.description,
+  starsAmount: theme.starsAmount,
+  contents: { [themeInventoryKey(theme.id)]: 1 },
+}));
 
 const STARTING_SKUS = [
   { sku: "pencil_5", title: "5 Pencils", description: "5 x pencil", starsAmount: 25, contents: { pencil: 5 } },
@@ -30,7 +42,7 @@ const STARTING_SKUS = [
 ] as const;
 
 export async function seedShopSkus(db: ReturnType<typeof drizzle>): Promise<void> {
-  for (const row of STARTING_SKUS) {
+  for (const row of [...STARTING_SKUS, ...THEME_SKUS]) {
     await db
       .insert(shopSkus)
       .values(row)

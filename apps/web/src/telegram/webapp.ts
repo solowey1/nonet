@@ -6,6 +6,7 @@
  * optional for a game whose core interaction *is* dragging — without it,
  * dragging a piece downward closes the app.
  */
+import { PREMIUM_THEMES, type ThemePalette } from "@nonet/shared";
 
 export type InvoiceStatus = "paid" | "cancelled" | "failed" | "pending";
 export type HapticImpactStyle = "light" | "medium" | "heavy" | "rigid" | "soft";
@@ -19,6 +20,23 @@ interface ThemeParams {
   hint_color?: string;
   button_color?: string;
   destructive_text_color?: string;
+  header_bg_color?: string;
+}
+
+interface BackButton {
+  isVisible: boolean;
+  show(): void;
+  hide(): void;
+  onClick(callback: () => void): void;
+  offClick(callback: () => void): void;
+}
+
+interface SettingsButton {
+  isVisible: boolean;
+  show(): void;
+  hide(): void;
+  onClick(callback: () => void): void;
+  offClick(callback: () => void): void;
 }
 
 interface HapticFeedback {
@@ -66,6 +84,13 @@ interface TelegramWebApp {
   HapticFeedback?: HapticFeedback;
   CloudStorage?: CloudStorage;
   openTelegramLink?(url: string): void;
+  BackButton?: BackButton;
+  SettingsButton?: SettingsButton;
+  /** Color-key mode ('bg_color'/'secondary_bg_color') keeps the native header
+   * permanently in sync with that themeParams field — no re-application
+   * needed on themeChanged, unlike a static hex value would require. */
+  setHeaderColor?(color: "bg_color" | "secondary_bg_color" | string): void;
+  setBackgroundColor?(color: "bg_color" | "secondary_bg_color" | string): void;
 }
 
 declare global {
@@ -83,7 +108,16 @@ export function getTelegramInitData(): string | null {
   return initData ? initData : null;
 }
 
-export function bootstrapTelegramWebApp(): void {
+export async function bootstrapTelegramWebApp(): Promise<void> {
+  // Both preferences work with or without a real Telegram WebView (via
+  // CloudStorage's localStorage fallback) — resolved before any
+  // Telegram-specific setup so plain-browser dev/testing behaves the same
+  // as inside Telegram, and so an explicit theme choice is already in
+  // effect before Telegram's own live sync below could flash the wrong
+  // colors first.
+  await loadThemePreference();
+  void loadHapticsPreference();
+
   const webApp = getWebApp();
   if (!webApp) return;
   webApp.ready();
@@ -92,7 +126,6 @@ export function bootstrapTelegramWebApp(): void {
   syncTelegramTheme();
   syncSafeAreaInsets();
   requestFullscreenIfNeeded();
-  void loadHapticsPreference();
 }
 
 /**
@@ -108,6 +141,9 @@ export function bootstrapTelegramWebApp(): void {
 function applyThemeParams(): void {
   const webApp = getWebApp();
   if (!webApp) return;
+  // An explicit theme choice (§19 Settings) wins outright — don't let
+  // Telegram's own live theme (initial or via themeChanged) fight it.
+  if (themeMode !== "auto") return;
   const root = document.documentElement.style;
   const { themeParams: t } = webApp;
   if (t.bg_color) root.setProperty("--nonet-bg", t.bg_color);
@@ -118,6 +154,12 @@ function applyThemeParams(): void {
   if (t.button_color) root.setProperty("--nonet-accent", t.button_color);
   if (t.destructive_text_color) root.setProperty("--nonet-danger", t.destructive_text_color);
   root.setProperty("color-scheme", webApp.colorScheme);
+  // Keep Telegram's own native header/background chrome pinned to bg_color
+  // via the color-key mode (not a static hex) so it tracks every future
+  // themeChanged automatically — most important right here at first paint,
+  // so the native header never flashes a color that doesn't match the page.
+  webApp.setHeaderColor?.("bg_color");
+  webApp.setBackgroundColor?.("bg_color");
 }
 
 function syncTelegramTheme(): void {
@@ -186,6 +228,45 @@ export function setClosingConfirmation(enabled: boolean): void {
   else webApp.disableClosingConfirmation?.();
 }
 
+// --- BackButton / SettingsButton (§19) ---
+// BackButton is toggled per screen (shown on every screen but the main
+// menu) with a fresh handler each time navigation changes, since "back"
+// means something different depending on where you are. SettingsButton is
+// registered once at bootstrap with a single fixed handler — it's a
+// persistent native menu control, not a per-screen affordance.
+
+let backButtonHandler: (() => void) | null = null;
+
+/** Registers `onClick` as the BackButton's sole handler (replacing any prior one) and shows it. */
+export function showBackButton(onClick: () => void): void {
+  const webApp = getWebApp();
+  const backButton = webApp?.BackButton;
+  if (!backButton) return;
+  if (backButtonHandler) backButton.offClick(backButtonHandler);
+  backButtonHandler = onClick;
+  backButton.onClick(onClick);
+  backButton.show();
+}
+
+export function hideBackButton(): void {
+  const webApp = getWebApp();
+  const backButton = webApp?.BackButton;
+  if (!backButton) return;
+  if (backButtonHandler) {
+    backButton.offClick(backButtonHandler);
+    backButtonHandler = null;
+  }
+  backButton.hide();
+}
+
+/** Call once at bootstrap; `onClick` should navigate straight to the Settings screen from anywhere. */
+export function initSettingsButton(onClick: () => void): void {
+  const webApp = getWebApp();
+  if (!webApp?.SettingsButton) return;
+  webApp.SettingsButton.onClick(onClick);
+  webApp.SettingsButton.show();
+}
+
 /**
  * Opens Telegram's native Stars payment sheet for an invoice link (§13).
  * Outside a real Telegram WebView (e.g. local dev in a plain browser) there's
@@ -221,6 +302,122 @@ function cloudSetItem(key: string, value: string): void {
     return;
   }
   localStorage.setItem(`nonet:cloud:${key}`, value);
+}
+
+// --- Theme selection (§19) ---
+// "auto" (default) leaves Telegram's own live theme in full control, exactly
+// as before this feature existed. "light"/"dark" and any purchased premium
+// theme id (from `@nonet/shared`'s PREMIUM_THEMES) instead paint a fixed
+// palette via the same "inline style beats stylesheet" mechanism
+// `applyThemeParams` already uses — so switching to an explicit theme simply
+// means Telegram's own sync (`applyThemeParams`, above) stops applying (see
+// its early `themeMode !== "auto"` check) while this takes over the exact
+// same CSS custom properties.
+
+export type ThemeMode = "auto" | "light" | "dark" | string;
+
+const THEME_PREFERENCE_KEY = "themeMode";
+let themeMode: ThemeMode = "auto";
+
+const LIGHT_PALETTE: ThemePalette = {
+  bg: "#eef1f6",
+  board: "#ffffff",
+  cellEmpty: "#e4e8f0",
+  cellFilled: "#3b6fe0",
+  blockDivider: "#c7cedb",
+  accent: "#0a84ff",
+  text: "#1a1d24",
+  textDim: "#6b7280",
+  danger: "#e0393e",
+};
+
+const DARK_PALETTE: ThemePalette = {
+  bg: "#14171c",
+  board: "#1c2028",
+  cellEmpty: "#232833",
+  cellFilled: "#4a7dff",
+  blockDivider: "#363c48",
+  accent: "#5ac8fa",
+  text: "#f2f4f8",
+  textDim: "#8b93a3",
+  danger: "#ff5b5b",
+};
+
+function paletteFor(mode: ThemeMode): ThemePalette | null {
+  if (mode === "light") return LIGHT_PALETTE;
+  if (mode === "dark") return DARK_PALETTE;
+  return PREMIUM_THEMES.find((theme) => theme.id === mode)?.palette ?? null;
+}
+
+function applyPalette(p: ThemePalette): void {
+  const root = document.documentElement.style;
+  root.setProperty("--nonet-bg", p.bg);
+  root.setProperty("--nonet-board", p.board);
+  root.setProperty("--nonet-cell-empty", p.cellEmpty);
+  root.setProperty("--nonet-cell-filled", p.cellFilled);
+  root.setProperty("--nonet-block-divider", p.blockDivider);
+  root.setProperty("--nonet-accent", p.accent);
+  root.setProperty("--nonet-text", p.text);
+  root.setProperty("--nonet-text-dim", p.textDim);
+  root.setProperty("--nonet-danger", p.danger);
+  root.setProperty("color-scheme", p === LIGHT_PALETTE ? "light" : "dark");
+  const webApp = getWebApp();
+  webApp?.setHeaderColor?.(p.bg);
+  webApp?.setBackgroundColor?.(p.bg);
+}
+
+const PALETTE_PROPERTIES = [
+  "--nonet-bg",
+  "--nonet-board",
+  "--nonet-cell-empty",
+  "--nonet-cell-filled",
+  "--nonet-block-divider",
+  "--nonet-accent",
+  "--nonet-text",
+  "--nonet-text-dim",
+  "--nonet-danger",
+  "color-scheme",
+] as const;
+
+function clearPaletteOverride(): void {
+  const root = document.documentElement.style;
+  for (const prop of PALETTE_PROPERTIES) root.removeProperty(prop);
+}
+
+function applyResolvedTheme(): void {
+  if (themeMode === "auto") {
+    clearPaletteOverride();
+    applyThemeParams(); // hand control back to Telegram's live theme immediately, not just on the next themeChanged
+    return;
+  }
+  const palette = paletteFor(themeMode);
+  // An unknown/not-(yet-)owned id (e.g. stale CloudStorage data from before
+  // a theme purchase was later refunded, or plain corruption) falls back to
+  // auto rather than leaving stale colors on screen from a previous mode.
+  if (!palette) {
+    clearPaletteOverride();
+    applyThemeParams();
+    return;
+  }
+  applyPalette(palette);
+}
+
+/** Reads any previously-chosen theme (CloudStorage, or its localStorage fallback outside Telegram) and applies it. Call once, before `syncTelegramTheme`. */
+export async function loadThemePreference(): Promise<void> {
+  const stored = await cloudGetItem(THEME_PREFERENCE_KEY);
+  themeMode = stored ?? "auto";
+  applyResolvedTheme();
+}
+
+export function getThemeMode(): ThemeMode {
+  return themeMode;
+}
+
+/** `mode` should be "auto", "light", "dark", or an id the caller has already verified is owned (Settings screen's job — this function doesn't re-check). */
+export function setThemeMode(mode: ThemeMode): void {
+  themeMode = mode;
+  cloudSetItem(THEME_PREFERENCE_KEY, mode);
+  applyResolvedTheme();
 }
 
 // --- Haptics (§12) ---

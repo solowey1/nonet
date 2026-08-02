@@ -19,6 +19,10 @@
 }
 
 .shopButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: 36px;
   margin-right: 12px;
   padding: 6px 14px;
