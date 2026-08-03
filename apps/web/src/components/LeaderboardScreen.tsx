@@ -65,13 +65,13 @@ export function LeaderboardScreen({ sessionToken, profile, onClose }: Leaderboar
           >
             <TabsTrigger
               value="leaderboard"
-              className="h-11 rounded-none border-b-2 border-transparent bg-transparent px-3.5 font-semibold text-muted-foreground data-[selected]:border-primary data-[selected]:bg-transparent data-[selected]:text-foreground data-[selected]:shadow-none"
+              className="h-11 rounded-none border-b-2 border-transparent bg-transparent px-3.5 font-semibold text-muted-foreground aria-selected:border-primary aria-selected:bg-transparent aria-selected:text-foreground aria-selected:shadow-none data-[active]:border-primary data-[active]:bg-transparent data-[active]:text-foreground data-[active]:shadow-none"
             >
               {t("leaderboard.tabLeaderboard")}
             </TabsTrigger>
             <TabsTrigger
               value="mine"
-              className="h-11 rounded-none border-b-2 border-transparent bg-transparent px-3.5 font-semibold text-muted-foreground data-[selected]:border-primary data-[selected]:bg-transparent data-[selected]:text-foreground data-[selected]:shadow-none"
+              className="h-11 rounded-none border-b-2 border-transparent bg-transparent px-3.5 font-semibold text-muted-foreground aria-selected:border-primary aria-selected:bg-transparent aria-selected:text-foreground aria-selected:shadow-none data-[active]:border-primary data-[active]:bg-transparent data-[active]:text-foreground data-[active]:shadow-none"
             >
               {t("leaderboard.tabMine")}
             </TabsTrigger>

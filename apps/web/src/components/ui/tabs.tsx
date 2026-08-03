@@ -17,7 +17,14 @@ export function TabsTrigger({ className, ...props }: React.ComponentPropsWithout
   return (
     <BaseTabs.Tab
       className={cn(
-        "relative z-10 inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md px-3 text-sm font-medium text-muted-foreground outline-none transition-colors data-[selected]:text-foreground data-[selected]:bg-background data-[selected]:shadow-sm focus-visible:ring-2 focus-visible:ring-ring/50",
+        // Base UI's Tab marks the active one with `data-active` and
+        // `aria-selected` — NOT `data-selected`, which is what this used to
+        // target, so the selected tab rendered identically to the others
+        // (§19 round 8). `aria-selected` is the one guaranteed by the ARIA
+        // tabs pattern itself, with `data-active` kept alongside it.
+        "relative z-10 inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md px-3 text-sm font-medium text-muted-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
+        "aria-selected:bg-background aria-selected:text-foreground aria-selected:shadow-sm",
+        "data-[active]:bg-background data-[active]:text-foreground data-[active]:shadow-sm",
         className,
       )}
       {...props}

@@ -6,10 +6,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useGameStore } from "../store/gameStore.js";
 import { hapticSelection, shareViaTelegram } from "../telegram/webapp.js";
 import { SoundToggleButton } from "./SoundToggleButton.js";
+import { INVENTORY_ITEM_ICON, PowerupInfoSheet, type InventoryItemKind } from "./PowerupInfoSheet.js";
 import { formatCount } from "../utils/formatCount.js";
-import { POWERUP_ICON } from "../utils/powerupIcon.js";
 
-const POWERUP_ORDER = ["pencil", "eraser", "rocket", "bomb", "fill"] as const;
+/** Same six items, in the same order, as the in-game tray — revive included (§19 round 8). */
+const ITEM_ORDER: readonly InventoryItemKind[] = ["pencil", "eraser", "rocket", "bomb", "fill", "revive"];
 
 /** §19: Continue/New game, Leaderboard, Shop, Settings — a plain list, not the previous button grid. */
 export function MainMenu() {
@@ -30,6 +31,7 @@ export function MainMenu() {
   // only an in-progress run needs a "are you sure" before New Game discards it.
   const hasUnfinishedRun = hasActiveRun && gameStatus === "playing";
   const [confirmNewGame, setConfirmNewGame] = useState(false);
+  const [infoFor, setInfoFor] = useState<InventoryItemKind | null>(null);
 
   return (
     <div
@@ -80,19 +82,28 @@ export function MainMenu() {
         </div>
       )}
 
+      {/* Tap (not long-press) opens the description here — unlike the in-game
+          tray, nothing on this screen competes for a plain tap (§19 round 8). */}
       <div className="flex justify-center gap-2 p-2">
-        {POWERUP_ORDER.map((kind) => {
-          const Icon = POWERUP_ICON[kind];
+        {ITEM_ORDER.map((kind) => {
+          const Icon = INVENTORY_ITEM_ICON[kind];
+          const count = inventory[kind] ?? 0;
           return (
-            <div
+            <button
               key={kind}
+              type="button"
               className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-0.5 rounded-lg bg-muted p-1.5"
+              aria-label={`${t(`inventory.${kind}`)} (${t("inventory.available", { count })})`}
+              onClick={() => {
+                hapticSelection();
+                setInfoFor(kind);
+              }}
             >
               <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
               <span className="text-[0.7rem] font-bold text-muted-foreground">
-                {formatCount(inventory[kind] ?? 0, t("common.thousandsSuffix"))}
+                {formatCount(count, t("common.thousandsSuffix"))}
               </span>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -196,6 +207,8 @@ export function MainMenu() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {infoFor && <PowerupInfoSheet kind={infoFor} onClose={() => setInfoFor(null)} />}
     </div>
   );
 }

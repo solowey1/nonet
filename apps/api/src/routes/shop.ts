@@ -8,7 +8,7 @@ import { createInvoiceLink } from "../telegram/botApi.js";
 
 export async function shopRoutes(app: FastifyInstance) {
   app.get("/api/shop", async (_request, reply) => {
-    const rows = await db.select().from(shopSkus).where(eq(shopSkus.active, true));
+    const rows = await db.select().from(shopSkus).where(eq(shopSkus.active, true)).orderBy(shopSkus.sortOrder);
     return reply.send(
       shopResponseSchema.parse({
         skus: rows.map((r) => ({

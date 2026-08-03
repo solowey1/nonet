@@ -1,6 +1,5 @@
 .hud {
   display: flex;
-  justify-content: space-between;
   align-items: baseline;
   padding: calc(10px + var(--nonet-safe-top)) 16px 6px;
 }
@@ -32,15 +31,4 @@
   display: block;
 }
 
-.combo {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--nonet-accent);
-  min-width: 3em;
-  text-align: right;
-}
-
-/* One non-clearing placement left before the combo actually dies (§6 round 5) — a red warning, not the usual accent color. */
-.combo[data-grace="true"] {
-  color: var(--nonet-danger);
-}
+/* The combo readout moved out of this component in round 8 — see App.module.css's `.combo`. */

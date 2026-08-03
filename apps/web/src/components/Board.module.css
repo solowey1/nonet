@@ -76,6 +76,17 @@
   z-index: 2;
 }
 
+/*
+ * Landscape: 9 x 9.5vh plus padding is nearly the whole viewport height, so
+ * the board ran right into the bottom edge. A slightly smaller cell buys back
+ * the breathing room without changing the portrait sizing at all (§19 round 8).
+ */
+@media (orientation: landscape) {
+  .board {
+    --cell: min(9.5vw, 8.4vh, 42px);
+  }
+}
+
 @keyframes clear-cell {
   0% {
     transform: scale(1);

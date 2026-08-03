@@ -19,8 +19,22 @@ function StarIcon({ className }: { className?: string }) {
 // the shop's contents line needs to render it alongside the 5 real powerups.
 const CONTENTS_ICON: Partial<Record<string, (typeof POWERUP_ICON)["pencil"]>> = { ...POWERUP_ICON, revive: Heart };
 
+/**
+ * The order a bundle's contents are listed in (§19 round 8). It has to be
+ * explicit: `contents` is a Postgres `jsonb` column, and jsonb does not
+ * preserve key insertion order — so `Object.entries` alone would list a
+ * toolbox in whatever order the database chose to store the keys.
+ */
+const CONTENTS_ORDER = ["pencil", "eraser", "rocket", "bomb", "fill", "revive"];
+
 function ContentsLine({ contents }: { contents: Record<string, number> }) {
-  const entries = Object.entries(contents).filter(([item]) => !item.startsWith("theme_"));
+  const entries = Object.entries(contents)
+    .filter(([item]) => !item.startsWith("theme_"))
+    .sort(([a], [b]) => {
+      const ia = CONTENTS_ORDER.indexOf(a);
+      const ib = CONTENTS_ORDER.indexOf(b);
+      return (ia === -1 ? CONTENTS_ORDER.length : ia) - (ib === -1 ? CONTENTS_ORDER.length : ib);
+    });
   if (entries.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
@@ -153,7 +167,7 @@ export function ShopOverlay({ sessionToken, inventory, onClose, onPurchased }: S
     getShop()
       .then((res) => {
         // "revive" (bare, no suffix) is the game-over screen's own pay-right-
-        // now SKU — the bulk revive_1/3/5/20 tiers are genuine shop stock and
+        // now SKU — the bulk revive_3/10/25 tiers are genuine shop stock and
         // stay in this list.
         if (!cancelled) setSkus(res.skus.filter((s) => s.sku !== "revive"));
       })

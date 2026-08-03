@@ -151,6 +151,11 @@ export const shopSkus = pgTable("shop_skus", {
   // table, not in code, so they can change without a deploy."
   contents: jsonb("contents").notNull().default(sql`'{}'::jsonb`),
   active: boolean("active").notNull().default(true),
+  // Display order in the shop (§19 round 8). Without it the list came back in
+  // whatever order Postgres felt like, which is not a guarantee — and the
+  // catalogue's order is a merchandising decision, so it belongs in the same
+  // editable-without-a-deploy table as the prices.
+  sortOrder: integer("sort_order").notNull().default(0),
 });
 
 export const dailyStats = pgTable(
