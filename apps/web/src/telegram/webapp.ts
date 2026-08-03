@@ -126,6 +126,7 @@ export async function bootstrapTelegramWebApp(): Promise<void> {
   await loadThemePreference();
   await loadLanguagePreference();
   void loadHapticsPreference();
+  void loadSoundPreference();
 
   const webApp = getWebApp();
   if (!webApp) return;
@@ -476,6 +477,31 @@ export function hapticSelection(): void {
   getWebApp()?.HapticFeedback?.selectionChanged();
 }
 
+// --- Sound (§12 feedback, §19 round 6) ---
+// Same shape as the haptics preference above, and lives here for the same
+// reason: every user preference in this app is persisted through one
+// CloudStorage layer. The sounds themselves are synthesized in
+// `audio/sounds.ts`, which reads `isSoundEnabled()` before playing — a
+// one-way dependency (sounds.ts -> webapp.ts), so this module stays free of
+// any audio knowledge.
+
+const SOUND_PREFERENCE_KEY = "soundEnabled";
+let soundEnabled = true;
+
+export async function loadSoundPreference(): Promise<void> {
+  const stored = await cloudGetItem(SOUND_PREFERENCE_KEY);
+  soundEnabled = stored !== "false";
+}
+
+export function isSoundEnabled(): boolean {
+  return soundEnabled;
+}
+
+export function setSoundEnabled(enabled: boolean): void {
+  soundEnabled = enabled;
+  cloudSetItem(SOUND_PREFERENCE_KEY, String(enabled));
+}
+
 // --- Language (§19) ---
 // "auto" (default) follows Telegram's own `language_code` for the user;
 // an explicit choice overrides it. Persisted via CloudStorage, same pattern
@@ -515,8 +541,22 @@ export function setLanguageMode(mode: LanguageMode): void {
  * plain `window.open` outside Telegram so the flow is still exercisable
  * (if not "native") in a normal browser during dev/testing.
  */
+/**
+ * What a shared card links to. Defaults to this page's own origin, which is
+ * what it used to always be — but a plain website link cannot *launch* a Mini
+ * App, so a recipient tapping it just landed on the site (§19 round 7). The
+ * server supplies the bot's `t.me` deep link at session time instead (see
+ * `sessionResponseSchema.miniAppUrl`); only it knows the bot's username.
+ */
+let shareTargetUrl: string | null = null;
+
+export function setShareTargetUrl(url: string | null): void {
+  shareTargetUrl = url;
+}
+
 export function shareViaTelegram(text: string): void {
-  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(window.location.origin)}&text=${encodeURIComponent(text)}`;
+  const target = shareTargetUrl ?? window.location.origin;
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(target)}&text=${encodeURIComponent(text)}`;
   const webApp = getWebApp();
   if (webApp?.openTelegramLink) {
     webApp.openTelegramLink(shareUrl);

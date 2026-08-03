@@ -32,6 +32,17 @@ const envSchema = z.object({
   // public origin. Defaulted (unlike the bot's) since it's a stub feature,
   // not something worth hard-failing local/CI runs over.
   WEBAPP_URL: z.string().url().default("http://localhost:5173"),
+  // §19 round 7: the bot's @username, used to build the t.me deep link that
+  // actually *launches* the Mini App when a player shares their score — a
+  // plain WEBAPP_URL link only opens the website, which can't start a Mini
+  // App. Optional rather than required on purpose: an unset value degrades
+  // sharing back to the website link, which is strictly better than a whole
+  // API that refuses to boot over a share button.
+  BOT_USERNAME: z.string().min(1).optional(),
+  // Only needed if the Mini App is a *named* one (BotFather "Web Apps" ->
+  // short name), giving `t.me/<bot>/<short>`. Leave unset when it's the
+  // bot's Main Mini App, which `t.me/<bot>?startapp=` opens directly.
+  MINI_APP_SHORT_NAME: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

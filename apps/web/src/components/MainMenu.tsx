@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Award, Play, RotateCcw, Settings, Store, Trophy } from "lucide-react";
+import { Award, Play, RotateCcw, Settings, Share2, Store, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useGameStore } from "../store/gameStore.js";
-import { hapticSelection } from "../telegram/webapp.js";
+import { hapticSelection, shareViaTelegram } from "../telegram/webapp.js";
+import { SoundToggleButton } from "./SoundToggleButton.js";
 import { formatCount } from "../utils/formatCount.js";
 import { POWERUP_ICON } from "../utils/powerupIcon.js";
 
@@ -40,6 +41,35 @@ export function MainMenu() {
         paddingLeft: "calc(24px + var(--nonet-safe-left))",
       }}
     >
+      {/*
+        Corner controls. Offset by the same safe-area insets the container
+        itself uses, which on Telegram fullscreen already include its own
+        chevron/menu strip (§12) — so the top-right button lands below those
+        native controls rather than under them, the same problem the in-game
+        header had to solve in round 2.
+      */}
+      <Button
+        variant="secondary"
+        size="icon"
+        className="absolute"
+        style={{ top: "calc(10px + var(--nonet-safe-top))", left: "calc(12px + var(--nonet-safe-left))" }}
+        aria-label={t("mainMenu.share")}
+        onClick={() => {
+          hapticSelection();
+          shareViaTelegram(
+            profile?.bestRun
+              ? t("leaderboard.shareText", { score: profile.bestRun.score.toLocaleString() })
+              : t("mainMenu.shareInvite"),
+          );
+        }}
+      >
+        <Share2 className="h-[18px] w-[18px]" aria-hidden="true" />
+      </Button>
+      <SoundToggleButton
+        className="absolute"
+        style={{ top: "calc(10px + var(--nonet-safe-top))", right: "calc(12px + var(--nonet-safe-right))" }}
+      />
+
       <div className="mb-1 text-4xl font-extrabold tracking-[0.12em]">NONET</div>
       {profile?.bestRun && (
         <div className="mb-2 flex flex-col items-center">

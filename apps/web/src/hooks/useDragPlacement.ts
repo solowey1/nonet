@@ -1,5 +1,6 @@
 import { useCallback, useState, type RefObject } from "react";
 import { canPlace, detectFullUnits, placePiece, unitsMask } from "@nonet/engine";
+import { playSound } from "../audio/sounds.js";
 import { useGameStore } from "../store/gameStore.js";
 import { hapticNotification } from "../telegram/webapp.js";
 import { BOARD_SIZE, clamp, pointToFractionalCell } from "../utils/geometry.js";
@@ -18,6 +19,10 @@ export function useDragPlacement(boardRef: RefObject<HTMLDivElement | null>) {
     (slot: 0 | 1 | 2, pointerId: number, clientX: number, clientY: number) => {
       const { game } = useGameStore.getState();
       if (game.status === "gameover" || !game.hand[slot]) return;
+
+      // After the guards, so the "pinch" only ever sounds for a drag that
+      // actually starts — not for a tap on an empty slot or a dead run.
+      playSound("grab");
 
       function computeGhost(x: number, y: number): GhostPreview | null {
         const boardEl = boardRef.current;

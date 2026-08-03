@@ -140,6 +140,13 @@ export const sessionResponseSchema = z.object({
   inventory: z.record(z.string(), z.number().int().nonnegative()),
   activeRun: activeRunSchema.nullable(),
   dailyGift: dailyGiftSchema,
+  // The `t.me` deep link that launches this Mini App, for share cards (§19
+  // round 7). Server-built (only the api knows the bot's username, from
+  // BOT_USERNAME) and delivered here rather than baked into the web bundle,
+  // so changing it is a config edit and an api restart — not a web rebuild.
+  // Null when BOT_USERNAME isn't configured; the client then shares its own
+  // origin, exactly as it did before.
+  miniAppUrl: z.string().nullable(),
 });
 
 // --- POST /api/run/start ---

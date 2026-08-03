@@ -1,16 +1,19 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Check, Link2, Lock, Vibrate } from "lucide-react";
+import { ArrowLeft, Check, Link2, Lock, Vibrate, Volume2 } from "lucide-react";
 import { PREMIUM_THEMES, themeInventoryKey } from "@nonet/shared";
 import { postWalletLink } from "../api/client.js";
+import { playSound } from "../audio/sounds.js";
 import { useGameStore } from "../store/gameStore.js";
 import {
   getLanguageMode,
   getThemeMode,
   hapticSelection,
   isHapticsEnabled,
+  isSoundEnabled,
   setHapticsEnabled,
   setLanguageMode,
+  setSoundEnabled,
   setThemeMode,
   type LanguageMode,
   type ThemeMode,
@@ -55,6 +58,7 @@ export function SettingsScreen() {
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getThemeMode());
   const [languageMode, setLanguageModeState] = useState<LanguageMode>(() => getLanguageMode());
   const [hapticsOn, setHapticsOn] = useState(() => isHapticsEnabled());
+  const [soundOn, setSoundOn] = useState(() => isSoundEnabled());
   const [walletAddress, setWalletAddress] = useState<string | null>(() => currentWalletAddress());
   const [walletBusy, setWalletBusy] = useState(false);
 
@@ -167,6 +171,23 @@ export function SettingsScreen() {
                 setHapticsOn(next);
                 setHapticsEnabled(next);
                 if (next) hapticSelection(); // immediate confirmation that it's back on
+              }}
+            />
+          </label>
+          <label className="flex min-h-12 cursor-pointer items-center justify-between rounded-lg bg-muted px-3.5 py-2.5">
+            <span className="flex items-center gap-2">
+              <Volume2 className="h-[18px] w-[18px]" aria-hidden="true" />
+              {t("settings.sound")}
+            </span>
+            <Switch
+              checked={soundOn}
+              onCheckedChange={(next) => {
+                setSoundOn(next);
+                setSoundEnabled(next);
+                // Same idea as the haptics toggle: turning it back on should
+                // immediately demonstrate itself. Ordered after
+                // setSoundEnabled, since playSound checks that flag.
+                if (next) playSound("grab");
               }}
             />
           </label>
