@@ -43,6 +43,12 @@ describe("GET /api/shop", () => {
     const bySku = Object.fromEntries(skus.map((s: { sku: string }) => [s.sku, s]));
     expect(bySku.pencil_5).toMatchObject({ starsAmount: 25, contents: { pencil: 5 } });
     expect(bySku.revive).toMatchObject({ starsAmount: 30, contents: {} });
+    // Bulk-stockable revive tiers (§19 round 5) — separate SKUs from the
+    // game-over-only "revive" above, each a genuine inventory grant.
+    expect(bySku.revive_1).toMatchObject({ starsAmount: 30, contents: { revive: 1 } });
+    expect(bySku.revive_3).toMatchObject({ starsAmount: 60, contents: { revive: 3 } });
+    expect(bySku.revive_5).toMatchObject({ starsAmount: 75, contents: { revive: 5 } });
+    expect(bySku.revive_20).toMatchObject({ starsAmount: 250, contents: { revive: 20 } });
     // §19 settings: purchasable cosmetic themes, seeded from packages/shared's
     // PREMIUM_THEMES — same generic SKU/inventory pipeline as the powerups above.
     expect(bySku.theme_sunset).toMatchObject({ starsAmount: 60, contents: { theme_sunset: 1 } });

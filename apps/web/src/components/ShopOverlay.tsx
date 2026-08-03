@@ -1,18 +1,23 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Check, Star } from "lucide-react";
+import { ArrowLeft, Check, Heart, Star } from "lucide-react";
 import { PREMIUM_THEMES, themeInventoryKey, type PremiumThemeDef, type Sku } from "@nonet/shared";
 import { getShop, postShopInvoice } from "../api/client.js";
 import { openInvoice } from "../telegram/webapp.js";
 import { POWERUP_ICON } from "../utils/powerupIcon.js";
 import { derivePreviewPalette } from "../utils/themePreview.js";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ThemePreviewMock } from "./ThemePreviewMock.js";
 
 function StarIcon({ className }: { className?: string }) {
   return <Star className={className} fill="#FFC335" stroke="#E98615" aria-hidden="true" />;
 }
+
+// "revive" isn't a PowerupKind (it's never armed on the board — see
+// InventoryBar), so it doesn't live in POWERUP_ICON; this is the one place
+// the shop's contents line needs to render it alongside the 5 real powerups.
+const CONTENTS_ICON: Partial<Record<string, (typeof POWERUP_ICON)["pencil"]>> = { ...POWERUP_ICON, revive: Heart };
 
 function ContentsLine({ contents }: { contents: Record<string, number> }) {
   const entries = Object.entries(contents).filter(([item]) => !item.startsWith("theme_"));
@@ -20,7 +25,7 @@ function ContentsLine({ contents }: { contents: Record<string, number> }) {
   return (
     <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
       {entries.map(([item, qty]) => {
-        const Icon = (POWERUP_ICON as Partial<Record<string, (typeof POWERUP_ICON)["pencil"]>>)[item];
+        const Icon = CONTENTS_ICON[item];
         return (
           <span key={item} className="inline-flex items-center gap-1">
             {Icon ? <Icon className="h-3.5 w-3.5" aria-hidden="true" /> : item} x{qty}
@@ -28,6 +33,45 @@ function ContentsLine({ contents }: { contents: Record<string, number> }) {
         );
       })}
     </div>
+  );
+}
+
+interface SkuDescriptionDialogProps {
+  readonly sku: Sku;
+  readonly owned: boolean;
+  readonly buying: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onBuy: () => void;
+}
+
+/** Tapping a non-theme item (§19 round 5) shows what it actually contains before buying — themes get their own richer preview dialog above. */
+function SkuDescriptionDialog({ sku, owned, buying, onOpenChange, onBuy }: SkuDescriptionDialogProps) {
+  const { t } = useTranslation();
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t(`shop.skuNames.${sku.sku}`, sku.title)}</DialogTitle>
+          <DialogDescription>{t(`shop.skuDescriptions.${sku.sku}`, sku.description)}</DialogDescription>
+        </DialogHeader>
+        <div className="mt-3">
+          <ContentsLine contents={sku.contents} />
+        </div>
+        <Button className="mt-4 w-full text-white" disabled={owned || buying} onClick={onBuy}>
+          {owned ? (
+            <>
+              <Check className="h-4 w-4" aria-hidden="true" /> {t("shop.previewOwned")}
+            </>
+          ) : buying ? (
+            "…"
+          ) : (
+            <>
+              <StarIcon className="h-4 w-4" /> {t("shop.previewBuy", { price: sku.starsAmount })}
+            </>
+          )}
+        </Button>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -102,12 +146,16 @@ export function ShopOverlay({ sessionToken, inventory, onClose, onPurchased }: S
   const [loadError, setLoadError] = useState<string | null>(null);
   const [purchase, setPurchase] = useState<PurchaseState>(null);
   const [previewThemeId, setPreviewThemeId] = useState<string | null>(null);
+  const [previewSkuId, setPreviewSkuId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     getShop()
       .then((res) => {
-        if (!cancelled) setSkus(res.skus.filter((s) => s.sku !== "revive")); // revive is only offered from the game-over screen
+        // "revive" (bare, no suffix) is the game-over screen's own pay-right-
+        // now SKU — the bulk revive_1/3/5/20 tiers are genuine shop stock and
+        // stay in this list.
+        if (!cancelled) setSkus(res.skus.filter((s) => s.sku !== "revive"));
       })
       .catch((err) => {
         console.error("failed to load the shop", err);
@@ -138,7 +186,8 @@ export function ShopOverlay({ sessionToken, inventory, onClose, onPurchased }: S
   };
 
   const previewTheme = previewThemeId ? PREMIUM_THEMES.find((th) => th.id === previewThemeId) : null;
-  const previewSku = previewTheme ? skus?.find((s) => s.sku === themeInventoryKey(previewTheme.id)) : null;
+  const previewThemeSku = previewTheme ? skus?.find((s) => s.sku === themeInventoryKey(previewTheme.id)) : null;
+  const previewSku = previewSkuId ? skus?.find((s) => s.sku === previewSkuId) : null;
 
   return (
     <div className="absolute inset-0 z-[600] flex flex-col bg-background" role="dialog" aria-label={t("shop.dialogLabel")}>
@@ -165,17 +214,15 @@ export function ShopOverlay({ sessionToken, inventory, onClose, onPurchased }: S
             <div
               key={sku.sku}
               className="relative flex items-center gap-3 rounded-lg bg-muted p-2.5"
-              role={theme ? "button" : undefined}
-              tabIndex={theme ? 0 : undefined}
-              onClick={theme ? () => setPreviewThemeId(theme.id) : undefined}
-              onKeyDown={
-                theme
-                  ? (e) => {
-                      if (e.key === "Enter" || e.key === " ") setPreviewThemeId(theme.id);
-                    }
-                  : undefined
-              }
-              style={theme ? { cursor: "pointer" } : undefined}
+              role="button"
+              tabIndex={0}
+              onClick={() => (theme ? setPreviewThemeId(theme.id) : setPreviewSkuId(sku.sku))}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                if (theme) setPreviewThemeId(theme.id);
+                else setPreviewSkuId(sku.sku);
+              }}
+              style={{ cursor: "pointer" }}
             >
               {theme && (
                 <span
@@ -233,8 +280,20 @@ export function ShopOverlay({ sessionToken, inventory, onClose, onPurchased }: S
             if (!open) setPreviewThemeId(null);
           }}
           onBuy={() => {
-            if (previewSku) void buy(previewSku);
+            if (previewThemeSku) void buy(previewThemeSku);
           }}
+        />
+      )}
+
+      {previewSku && (
+        <SkuDescriptionDialog
+          sku={previewSku}
+          owned={false}
+          buying={purchase?.sku === previewSku.sku && purchase.status === "buying"}
+          onOpenChange={(open) => {
+            if (!open) setPreviewSkuId(null);
+          }}
+          onBuy={() => void buy(previewSku)}
         />
       )}
     </div>

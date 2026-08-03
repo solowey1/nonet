@@ -19,6 +19,13 @@ export const powerupKindSchema = z.union([
   z.literal("fill"),
 ]);
 
+// Revive is a stockable inventory item (§19 round 5: bulk shop tiers) but
+// NOT a `PowerupKind` — it's never armed/used on the board, it's a distinct
+// engine action type (see reviveActionSchema) consumed only from the
+// game-over screen. `consumableItemSchema` is the wider set /api/inventory/
+// consume accepts: the 5 board powerups plus this one.
+export const consumableItemSchema = z.union([powerupKindSchema, z.literal("revive")]);
+
 const placeActionSchema = z.object({
   t: z.number().int().nonnegative(),
   type: z.literal("place"),
@@ -202,7 +209,7 @@ export const devSessionRequestSchema = z.object({
 
 export const inventoryConsumeRequestSchema = z.object({
   runId: z.string().uuid(),
-  item: powerupKindSchema,
+  item: consumableItemSchema,
 });
 
 export const inventoryConsumeResponseSchema = z.object({
@@ -324,6 +331,7 @@ export const achievementsResponseSchema = z.object({
 });
 
 export type PowerupKind = z.infer<typeof powerupKindSchema>;
+export type ConsumableItem = z.infer<typeof consumableItemSchema>;
 export type Action = z.infer<typeof actionSchema>;
 export type InventoryConsumeRequest = z.infer<typeof inventoryConsumeRequestSchema>;
 export type InventoryConsumeResponse = z.infer<typeof inventoryConsumeResponseSchema>;

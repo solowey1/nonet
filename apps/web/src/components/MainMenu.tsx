@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Award, Play, RotateCcw, Settings, Store, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useGameStore } from "../store/gameStore.js";
 import { hapticSelection } from "../telegram/webapp.js";
 import { formatCount } from "../utils/formatCount.js";
@@ -23,6 +25,10 @@ export function MainMenu() {
   const goToAchievements = useGameStore((s) => s.goToAchievements);
 
   const hasActiveRun = runId !== null;
+  // Game-over is already the end of the run — nothing left to lose there, so
+  // only an in-progress run needs a "are you sure" before New Game discards it.
+  const hasUnfinishedRun = hasActiveRun && gameStatus === "playing";
+  const [confirmNewGame, setConfirmNewGame] = useState(false);
 
   return (
     <div
@@ -80,7 +86,8 @@ export function MainMenu() {
           className="justify-start"
           onClick={() => {
             hapticSelection();
-            void newRun();
+            if (hasUnfinishedRun) setConfirmNewGame(true);
+            else void newRun();
           }}
         >
           <RotateCcw className="h-5 w-5" aria-hidden="true" />
@@ -135,6 +142,30 @@ export function MainMenu() {
           {t("mainMenu.settings")}
         </Button>
       </nav>
+
+      <Dialog open={confirmNewGame} onOpenChange={setConfirmNewGame}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("mainMenu.confirmNewGameTitle")}</DialogTitle>
+            <DialogDescription>{t("mainMenu.confirmNewGameBody")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmNewGame(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setConfirmNewGame(false);
+                hapticSelection();
+                void newRun();
+              }}
+            >
+              {t("mainMenu.confirmNewGameConfirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -102,7 +102,7 @@ export function postRunFinish(runToken: string, runId: string, actions: readonly
 export function postInventoryConsume(
   runToken: string,
   runId: string,
-  item: PowerupKind,
+  item: PowerupKind | "revive",
 ): Promise<InventoryConsumeResponse> {
   return postJson("/inventory/consume", { runId, item }, runToken, inventoryConsumeResponseSchema);
 }

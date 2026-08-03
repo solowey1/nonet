@@ -1623,3 +1623,168 @@ least some cells confirmed to actually carry one. All 9 passed. 113
 engine tests, 62 API tests (including 5 new achievement tests), `tsc
 --noEmit` across every package, and a full workspace `vite build` all
 pass/succeed.
+
+## Round 5: retroactive achievements, power-up/shop descriptions, stockable revive, new-game guard, combo overhaul
+
+### Achievements weren't retroactive
+
+`evaluateRunAchievements` checked `run_*` conditions against only the
+just-finished run's own stats, passed in directly — a run that had already
+crossed a threshold (before the achievement existed, or on any earlier run)
+was invisible to it forever unless a *future* run happened to cross the same
+bar again. Fixed at the root: `run_*` conditions now check a freshly-queried
+lifetime-best aggregate (`MAX(score)`, `MAX(maxCombo)`, ..., over every
+verified run) instead of the passed context — the same aggregate
+`GET /api/achievements` was already using to render progress bars, now
+reused for the actual unlock check too. Added `evaluateLifetimeAchievements`,
+called from `/api/session` on every login: since it re-derives entirely from
+already-persisted tables (no run context needed), simply opening the app now
+catches a player up on anything they already qualified for, without waiting
+on their next run to finish.
+
+### Power-up and shop-item descriptions
+
+Every power-up already had a real description string (`inventory.pencilDesc`
+etc.) — it just only ever surfaced as an `aria-label`, invisible to a
+sighted player during a game. Long-pressing (450ms) an `InventoryBar` icon
+now opens a bottom sheet with that same text, while a normal tap still
+arms/disarms exactly as before — `suppressClick` (set the moment the
+long-press timer fires) stops the click event a touch/mouse release
+synthesizes right after from *also* toggling arm/disarm. A bottom sheet, not
+a centered dialog, so it reads as "peek at info" rather than "leave the
+game" — this is the answer to "how do I show this without derailing
+gameplay": a gesture that doesn't collide with the existing tap-to-arm
+interaction, on a UI element that doesn't compete for permanent screen
+space. The Shop's non-theme items (pencil_5, toolbox, the revive tiers, ...)
+now open an equivalent description dialog on tap — previously only theme
+items were tappable at all; the buy button still purchases directly via
+`stopPropagation`, unchanged.
+
+### Revive becomes a stockable Shop item, not just a game-over impulse buy
+
+Added `revive_1`/`revive_3`/`revive_5`/`revive_20` SKUs (30 / 60 / 75 / 250
+Stars — 3x/5x/20x priced at the requested discount off buying that many
+one at a time), each a genuine inventory grant (`contents: { revive: N }`)
+through the *existing* generic SKU-crediting path — deliberately a new SKU,
+not a change to the original bare `"revive"` SKU (`contents: {}`), which
+stays exactly as it was: the game-over screen's own pay-right-now,
+scoped-to-this-run purchase, validated against the `purchases` table. The
+two purchase mechanisms sit side by side because unifying them would have
+meant reworking a delicate, already-shipped validation path for no
+behavioral gain.
+
+Spending a *stocked* revive needed a second, parallel token shape: `/api/
+inventory/consume`'s `item` param widened from `PowerupKind` to a new
+`consumableItemSchema` (`PowerupKind | "revive"`), and `validateConsumeTokens`'s
+revive branch now accepts EITHER a `purchases` row id (a UUID — the
+original real-money path) or an `inventoryLedger` row id (a plain integer —
+new, exactly how the 5 real power-ups already validate), disambiguated by
+shape alone. `buyRevive()` now checks `inventory.revive > 0` first: if
+stocked, it consumes one for free (no Stars invoice, no `openInvoice`
+popup) and applies the revive action with that ledger-id token; otherwise
+it falls back to the original Stars-invoice flow, unchanged. `revive` is
+NOT a `PowerupKind` — it's never armed on the board (it's the engine's own
+distinct `ReviveAction`, only ever appliable from the game-over screen) — so
+it's deliberately excluded from that union everywhere it would otherwise
+imply "usable mid-game."
+
+`InventoryBar` now shows revive alongside the 5 real power-ups, with its
+own count, styled visually disabled (`opacity-35`, no `border-primary`
+highlight ever) rather than using the native `disabled` attribute — a truly
+disabled button in most browsers stops receiving pointer events at all,
+which would have silently broken the long-press description gesture for
+exactly the one item where showing "what does this even do" matters most
+(a player who's never bought one yet). The click handler itself no-ops for
+non-armable items or an empty count instead.
+
+### New Game over an unfinished run now asks first
+
+Only guards a run still `"playing"` — a `"gameover"` run has nothing left
+to lose (the whole point of `hasActiveRun && gameStatus === "gameover"`
+already showing "Resume (Game Over)" instead of "Continue"), so New Game
+starts immediately in that case, same as always. A `"playing"` run instead
+opens a confirm dialog; only its explicit "Start new game" button actually
+calls `newRun()`.
+
+### Truncated power-up error text
+
+`.hint` was a fixed `height: 2.4em` (2 lines) with `overflow: hidden` — a
+deliberate choice (so a wrapping message can never push the board down) that
+turned out too short for some real messages, most visibly fill's
+region-too-large hint with an interpolated cell count. Bumped to `3.6em`
+(3 lines) and added `-webkit-line-clamp: 3` as a last-resort ellipsis for
+anything that still doesn't fit, rather than a silent mid-word cut — still
+a fixed reserved height, just sized for what real messages actually need.
+
+### "Pure game" indicator moved above the boosts
+
+Previously rendered inside `.scoreArea` (left-aligned under Score/Best,
+reading as "stuck to the left edge"). Moved into `.inventoryArea`, above
+`InventoryBar` itself, in both orientations — portrait already stacks block
+children top-to-bottom for free; landscape's `.inventoryArea` needed an
+explicit `flex-direction: column` added (it was row by default), or the
+badge and the power-up column would have sat side by side instead of
+stacked.
+
+### Combo: multi-unit clears now scale it, and it survives one miss
+
+Two independent, compounding fixes to `packages/engine/src/score.ts`'s
+`nextComboLevel` (renamed `nextCombo`, now returning `{comboLevel,
+comboGraceActive}` instead of a bare number):
+
+1. **Scaling**: a clearing placement now bumps the combo level by the
+   *number* of units cleared at once (`current + unitsCleared`), not a flat
+   `+1` — clearing 2 lines simultaneously is a harder move than clearing 1,
+   and previously earned exactly the same combo credit. `unitsCleared` was
+   already threaded all the way to this point as a real count (also driving
+   `clearBaseScore`'s existing quadratic scaling) — the combo increment
+   just wasn't using it.
+2. **Grace**: a non-clearing placement no longer zeroes the combo
+   immediately. The first miss just flips `comboGraceActive` on (the level
+   itself is untouched) — the UI reads this as a red warning instead of the
+   usual accent color on the combo readout. Only a *second* consecutive
+   miss (one that lands while grace is already active) actually zeroes it.
+   Without this, holding a combo across more than one placement at a time
+   was nearly impossible.
+
+Both changes compound: since `comboMultiplierX10` reads the post-increment
+level and every future clearing placement this run benefits from a higher
+level reached sooner (and held longer), the existing 20-fixture golden
+replay corpus needed regenerating (`node --experimental-strip-types
+scripts/generate-golden.ts`) — every fixture's expected score moved up,
+never down, exactly as expected from a change that only ever grows or
+sustains combo faster. Regenerating golden fixtures after a deliberate,
+reviewed scoring-rule change is exactly what that script's own comment
+calls for, not a shortcut around it.
+
+### Sounds: answered as a design question, not implemented this round
+
+The request ("how can sounds be added") was phrased as a how-to question,
+not an implementation instruction, and this round was already large — recommended
+approach (for a future round, on request): the Web Audio API over plain
+`<HTMLAudioElement>`s, since it supports true overlapping one-shots (a rapid
+clear-combo shouldn't cut off the previous clear's sound) and is what mobile
+WebViews handle most reliably; a small `sounds.ts` module preloading short
+`.mp3`/`.ogg` one-shots (grab, place, clear, one per power-up) as
+`AudioBuffer`s at boot and playing them via a shared `AudioContext`; muting
+piggybacks on the existing haptics Settings toggle pattern (CloudStorage-
+backed, same on/off convention) rather than a second separate setting;
+Telegram's in-app WebView, like most mobile browsers, blocks audio until a
+real user gesture — the very first `pointerdown` in the app (already
+present everywhere: grabbing a piece, tapping a menu button) is enough to
+unlock the `AudioContext`, no extra "tap to enable sound" prompt needed.
+
+### Verified with headless Chromium (Vite dev server + real Postgres + Fastify dev server + mocked Telegram WebApp) + full test suite
+
+10 checks: New Game over an unfinished ("playing") run shows the confirm
+dialog; Cancel dismisses it without starting a new run; confirming actually
+starts one; Revive appears in the in-game InventoryBar styled visually
+disabled; long-pressing a power-up opens its description sheet; a normal
+short tap still arms it instead; the hint box now allows 3 lines
+(`-webkit-line-clamp: 3`) instead of the old 2-line fixed height; the
+Shop lists the new `revive_3` bulk tier; tapping that row (not just its buy
+button) opens a description dialog. All 10 passed. 118 engine tests
+(including new `nextCombo` and grace-sequence cases; the golden-replay
+corpus regenerated and re-verified), 65 API tests (including new stocked-
+revive consume/validate and retroactive-achievement cases), `tsc --noEmit`
+across every package, and a full workspace `vite build` all pass/succeed.

@@ -4,10 +4,11 @@ import styles from "./ScoreHud.module.css";
 interface ScoreHudProps {
   readonly score: number;
   readonly comboLevel: number;
+  readonly comboGraceActive: boolean;
   readonly bestScore: number | null;
 }
 
-export function ScoreHud({ score, comboLevel, bestScore }: ScoreHudProps) {
+export function ScoreHud({ score, comboLevel, comboGraceActive, bestScore }: ScoreHudProps) {
   const { t } = useTranslation();
   return (
     <div className={styles.hud}>
@@ -23,7 +24,9 @@ export function ScoreHud({ score, comboLevel, bestScore }: ScoreHudProps) {
           </div>
         )}
       </div>
-      <div className={styles.combo}>{comboLevel > 1 ? t("scoreHud.combo", { level: comboLevel }) : ""}</div>
+      <div className={styles.combo} data-grace={comboLevel > 1 && comboGraceActive}>
+        {comboLevel > 1 ? t("scoreHud.combo", { level: comboLevel }) : ""}
+      </div>
     </div>
   );
 }

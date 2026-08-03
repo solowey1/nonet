@@ -39,3 +39,8 @@
   min-width: 3em;
   text-align: right;
 }
+
+/* One non-clearing placement left before the combo actually dies (§6 round 5) — a red warning, not the usual accent color. */
+.combo[data-grace="true"] {
+  color: var(--nonet-danger);
+}

@@ -3,7 +3,7 @@ import {
   PERFECT_CLEAR_BONUS,
   clearBaseScore,
   comboMultiplierX10,
-  nextComboLevel,
+  nextCombo,
   scorePlacement,
   scorePowerupClear,
 } from "../src/score.js";
@@ -38,14 +38,44 @@ describe("comboMultiplierX10", () => {
   });
 });
 
-describe("nextComboLevel", () => {
-  it("increments on a clearing placement", () => {
-    expect(nextComboLevel(0, 1)).toBe(1);
-    expect(nextComboLevel(3, 2)).toBe(4);
+describe("nextCombo", () => {
+  it("increments by the number of units cleared, not a flat +1", () => {
+    expect(nextCombo({ comboLevel: 0, comboGraceActive: false }, 1)).toEqual({
+      comboLevel: 1,
+      comboGraceActive: false,
+    });
+    expect(nextCombo({ comboLevel: 3, comboGraceActive: false }, 2)).toEqual({
+      comboLevel: 5,
+      comboGraceActive: false,
+    });
   });
 
-  it("resets to 0 when nothing clears", () => {
-    expect(nextComboLevel(5, 0)).toBe(0);
+  it("clearing also cancels an active grace warning", () => {
+    expect(nextCombo({ comboLevel: 4, comboGraceActive: true }, 1)).toEqual({
+      comboLevel: 5,
+      comboGraceActive: false,
+    });
+  });
+
+  it("a non-clearing placement enters grace instead of zeroing immediately", () => {
+    expect(nextCombo({ comboLevel: 5, comboGraceActive: false }, 0)).toEqual({
+      comboLevel: 5,
+      comboGraceActive: true,
+    });
+  });
+
+  it("a second consecutive non-clearing placement zeroes the combo", () => {
+    expect(nextCombo({ comboLevel: 5, comboGraceActive: true }, 0)).toEqual({
+      comboLevel: 0,
+      comboGraceActive: false,
+    });
+  });
+
+  it("stays at 0 with no grace when there was nothing to lose", () => {
+    expect(nextCombo({ comboLevel: 0, comboGraceActive: false }, 0)).toEqual({
+      comboLevel: 0,
+      comboGraceActive: false,
+    });
   });
 });
 

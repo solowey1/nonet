@@ -1,16 +1,19 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { db } from "../src/db/client.js";
-import { dailyStats, inventoryBalance } from "../src/db/schema.js";
+import { dailyStats, inventoryBalance, runs } from "../src/db/schema.js";
 import { env } from "../src/env.js";
-import { evaluateRunAchievements } from "../src/services/achievements.js";
+import { evaluateLifetimeAchievements } from "../src/services/achievements.js";
 import { hexToBytes } from "../src/utils/hex.js";
 import { addDaysUTC, todayUTCDateString } from "../src/utils/dates.js";
 import { autoplayGreedy } from "./helpers/autoplay.js";
 import { migrateTestDb, resetTestDb } from "./helpers/db.js";
 import { buildSignedInitData } from "./helpers/telegram.js";
 
-const NO_OP_RUN = { score: 0, maxCombo: 0, unitsCleared: 0, perfectClears: 0, usedPowerups: false };
+/** Inserts a verified `runs` row directly — a stand-in for "a run that already happened," so lifetime-best conditions (like first_5000's run_score) see it without replaying a full legitimate game. */
+async function insertVerifiedRun(userId: bigint, score: number): Promise<void> {
+  await db.insert(runs).values({ userId, seed: "00", score, verified: true, endedAt: new Date() });
+}
 
 const app = buildApp();
 
@@ -77,14 +80,17 @@ describe("GET /api/achievements", () => {
 // bot than the greedy single-lookahead one these tests otherwise use (see
 // milestone.test.ts) — difficulty escalation means it rarely clears that
 // high in practice. The reward-branching logic itself doesn't care how a
-// qualifying score was reached, so it's exercised directly against the
-// service (which is exactly what /api/run/finish calls once a run is
-// replay-verified) rather than via a real long-running autoplay session.
+// qualifying score was reached, so these insert a verified run row directly
+// and call `evaluateLifetimeAchievements` — the same lifetime-aggregate path
+// /api/session now uses for retroactive catch-up, and exactly what makes a
+// run that already happened (before the achievement existed, or before this
+// evaluation logic changed) unlock on the very next check rather than never.
 // `weekly_50000` below covers the full HTTP round trip into this same code.
 describe("achievements: first_5000 (mandatory, theme-unlock-or-fallback)", () => {
   it("unlocks Monochrome for free the first time a run crosses 5000", async () => {
     const { token, userId } = await sessionFor(101);
-    const unlocked = await evaluateRunAchievements(db, userId, { ...NO_OP_RUN, score: 5000 });
+    await insertVerifiedRun(userId, 5000);
+    const unlocked = await evaluateLifetimeAchievements(db, userId);
     expect(unlocked.map((u) => u.id)).toContain("first_5000");
 
     const rows = await db.select().from(inventoryBalance);
@@ -100,8 +106,9 @@ describe("achievements: first_5000 (mandatory, theme-unlock-or-fallback)", () =>
     const { userId } = await sessionFor(102);
     // Pre-own the theme (e.g. bought outright) before ever crossing 5000.
     await db.insert(inventoryBalance).values({ userId, item: "theme_monochrome", qty: 1 });
+    await insertVerifiedRun(userId, 5000);
 
-    const unlocked = await evaluateRunAchievements(db, userId, { ...NO_OP_RUN, score: 5000 });
+    const unlocked = await evaluateLifetimeAchievements(db, userId);
     expect(unlocked.map((u) => u.id)).toContain("first_5000");
 
     const rows = await db.select().from(inventoryBalance);
@@ -109,13 +116,34 @@ describe("achievements: first_5000 (mandatory, theme-unlock-or-fallback)", () =>
     expect(rows.find((r) => r.userId === userId && r.item === "bomb")?.qty).toBeGreaterThanOrEqual(3);
   });
 
-  it("never re-grants once earned, even if a later run also crosses 5000", async () => {
+  it("never re-grants once earned, even on a later re-check", async () => {
     const { userId } = await sessionFor(103);
-    const first = await evaluateRunAchievements(db, userId, { ...NO_OP_RUN, score: 5000 });
+    await insertVerifiedRun(userId, 5000);
+    const first = await evaluateLifetimeAchievements(db, userId);
     expect(first.map((u) => u.id)).toContain("first_5000");
 
-    const second = await evaluateRunAchievements(db, userId, { ...NO_OP_RUN, score: 5000 });
+    const second = await evaluateLifetimeAchievements(db, userId);
     expect(second.map((u) => u.id)).not.toContain("first_5000");
+  });
+
+  it("retroactively unlocks a run that scored 5000+ before this evaluation ever ran (a fresh session catches it up)", async () => {
+    const { token, userId } = await sessionFor(105);
+    // Simulate "already achieved before achievements existed" — the run row
+    // is there, but nothing has ever evaluated achievements for this user.
+    await insertVerifiedRun(userId, 7000);
+
+    const achBefore = await app.inject({ method: "GET", url: "/api/achievements", headers: { authorization: `Bearer ${token}` } });
+    expect(achBefore.json().achievements.find((a: { id: string }) => a.id === "first_5000").unlocked).toBe(false);
+
+    // Any fresh /api/session call now runs the lifetime catch-up.
+    const initData = buildSignedInitData(env.BOT_TOKEN, { id: 105, username: "user105" });
+    await app.inject({ method: "POST", url: "/api/session", payload: { initData } });
+
+    const achAfter = await app.inject({ method: "GET", url: "/api/achievements", headers: { authorization: `Bearer ${token}` } });
+    expect(achAfter.json().achievements.find((a: { id: string }) => a.id === "first_5000")).toMatchObject({
+      unlocked: true,
+      timesCompleted: 1,
+    });
   });
 });
 

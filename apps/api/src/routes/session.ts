@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { db } from "../db/client.js";
 import { inventoryBalance, runs, users } from "../db/schema.js";
 import { env } from "../env.js";
-import { evaluateLoginAchievements } from "../services/achievements.js";
+import { evaluateLifetimeAchievements, evaluateLoginAchievements } from "../services/achievements.js";
 import { grantDailyGiftIfNeeded } from "../services/dailyGift.js";
 import { grantWelcomeGift } from "../services/inventory.js";
 import { validateInitData } from "../telegram/initData.js";
@@ -55,6 +55,11 @@ async function issueSession(reply: FastifyReply, profile: ProfileFields) {
 
   const dailyGift = await grantDailyGiftIfNeeded(db, userId);
   await evaluateLoginAchievements(db, userId, dailyGift.streak);
+  // Retroactive catch-up (§19 round 5): a player who already qualified for
+  // something — before achievements existed, or on a run finished before
+  // this evaluation logic changed — gets it the moment they open the app,
+  // not only the next time they happen to finish a fresh run.
+  await evaluateLifetimeAchievements(db, userId);
 
   const inventoryRows = await db
     .select({ item: inventoryBalance.item, qty: inventoryBalance.qty })
