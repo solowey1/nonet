@@ -148,6 +148,7 @@ export const ru: typeof en = {
     themeDark: "Тёмная",
     feedback: "Отклик",
     haptics: "Тактильный отклик",
+    sound: "Звуковые эффекты",
     wallet: "Кошелёк",
     walletConnect: "Подключить кошелёк для будущих наград в Gram",
     walletDisconnect: "Отключить",

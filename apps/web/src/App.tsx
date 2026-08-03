@@ -20,6 +20,7 @@ import { ShopOverlay } from "./components/ShopOverlay.js";
 import { useCellSize } from "./hooks/useCellSize.js";
 import { useDragPlacement } from "./hooks/useDragPlacement.js";
 import { usePowerupTargeting, type TargetingState } from "./hooks/usePowerupTargeting.js";
+import { installAudioUnlock } from "./audio/sounds.js";
 import { useGameStore } from "./store/gameStore.js";
 import { hideBackButton, initSettingsButton, showBackButton } from "./telegram/webapp.js";
 import styles from "./App.module.css";
@@ -34,6 +35,10 @@ export function App() {
 
   useEffect(() => {
     void bootstrap();
+    // Arms the one-shot listener that creates the AudioContext on the first
+    // real gesture — mobile WebViews (Telegram's included) won't let one start
+    // before that, and every sound-producing action is downstream of a tap.
+    installAudioUnlock();
     // bootstrap runs once on mount — it's not meant to re-run on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

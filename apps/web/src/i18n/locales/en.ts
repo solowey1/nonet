@@ -150,6 +150,7 @@ export const en = {
     themeDark: "Dark",
     feedback: "Feedback",
     haptics: "Haptic feedback",
+    sound: "Sound effects",
     wallet: "Wallet",
     walletConnect: "Connect wallet for future Gram rewards",
     walletDisconnect: "Disconnect",

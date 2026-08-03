@@ -33,6 +33,7 @@ import {
   openInvoice,
   setClosingConfirmation,
 } from "../telegram/webapp.js";
+import { playSound } from "../audio/sounds.js";
 import { maskToCells } from "../utils/bitmask.js";
 import { getOrCreateDevUserId } from "../utils/devUser.js";
 import { hexToBytes } from "../utils/hex.js";
@@ -278,6 +279,14 @@ export const useGameStore = create<GameStoreState>((set, get) => {
           : null,
     });
 
+    // The power-up's own sound always fires (it's what tells you *which*
+    // power-up went off); the outcome sound layers on top only when the turn
+    // produced something bigger than the power-up itself — a perfect clear or
+    // the end of the run.
+    playSound(kind);
+    if (next.status === "gameover") playSound("gameOver");
+    else if (isPerfectClear) playSound("perfectClear");
+
     if (next.status === "gameover") hapticNotification("error");
     else if (isPerfectClear) hapticNotification("success");
     else if (clearedMask !== 0n) hapticImpact("medium");
@@ -418,6 +427,15 @@ export const useGameStore = create<GameStoreState>((set, get) => {
             : null,
       });
 
+      // Sound mirrors the same four outcomes the haptics below distinguish.
+      // The placement thunk always plays first — a clear is something that
+      // happens *because* a piece landed, so hearing only the fanfare would
+      // lose the landing itself.
+      playSound("place");
+      if (next.status === "gameover") playSound("gameOver");
+      else if (isPerfectClear) playSound("perfectClear");
+      else if (preview.unitsCleared > 0) playSound("clear", preview.unitsCleared, next.comboLevel);
+
       // §12 haptics: scale with what actually happened this turn, so a plain
       // placement, a line clear, a perfect clear, and running out of moves
       // each have a distinctly different feel rather than one generic buzz.
@@ -525,6 +543,7 @@ export const useGameStore = create<GameStoreState>((set, get) => {
           finishResult: null,
         });
         setClosingConfirmation(true);
+        playSound("revive");
         hapticNotification("success");
         void maybeCheckpoint();
         if (stocked) void get().refreshInventory(); // just spent one from stock — keep the displayed count honest

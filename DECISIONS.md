@@ -1788,3 +1788,88 @@ button) opens a description dialog. All 10 passed. 118 engine tests
 corpus regenerated and re-verified), 65 API tests (including new stocked-
 revive consume/validate and retroactive-achievement cases), `tsc --noEmit`
 across every package, and a full workspace `vite build` all pass/succeed.
+
+## Round 6: sound effects, synthesized rather than shipped
+
+### Why there are no audio files in this repo
+
+The ask was "can you generate the sounds yourself, or do I need to make
+them?" — every sound this game needs is a short arcade one-shot (a pluck, a
+thunk, a sweep, a boom), and that is precisely what oscillators, gain
+envelopes, and filtered noise are good at. So `apps/web/src/audio/sounds.ts`
+synthesizes all eleven at runtime with the Web Audio API instead of loading
+`.mp3`/`.ogg` assets. The tradeoffs that decided it:
+
+- **Nothing added to the bundle or the network budget (§16)** beyond ~250
+  lines. A comparable set of sampled one-shots is a few hundred KB, on a
+  critical path this project has deliberately kept lean.
+- **No binary blobs in git**, so a sound is reviewable as a diff — changing
+  the bomb's weight is editing two numbers, not re-exporting a file. This is
+  the same reasoning behind the theme system being custom properties rather
+  than pre-rendered images.
+- **Free parameterization.** A clear's arpeggio gets longer with the number
+  of units cleared and starts higher up the scale with the combo level, so
+  the audio tracks the same "that was a big move" signal §6 round 5 already
+  made the score and combo readout track. That's a couple of lines with a
+  synth and a whole matrix of pre-rendered variants without one.
+
+The escape hatch is intact: the call sites are all `playSound("bomb")`, so
+moving to sampled audio later changes only the bodies of the synth functions.
+
+Sound design is deliberately *timbral*, not just pitched — each power-up is
+told apart by texture (pencil = dry high scratch, eraser = duller swish,
+rocket = upward-sweeping whoosh, bomb = low body drop under a lowpassed
+blast, fill = continuous rising pour with no transient) rather than by
+learning five positions on a scale. `grab` rises and `place` falls, so
+picking up and putting down are opposites by ear.
+
+### Autoplay policy: unlocked by the gesture that was happening anyway
+
+Mobile WebViews (Telegram's included) refuse to start an AudioContext until
+a real user gesture, and constructing one earlier just yields a suspended
+context. `installAudioUnlock()` — armed from App's existing bootstrap effect
+— hooks the first `pointerdown`/`touchstart`/`click` anywhere, in the
+**capture** phase (the hand tray's own pointerdown captures the pointer
+immediately, so bubbling would be too late), creates and resumes the
+context, then removes itself. Every sound-producing action in this game is
+downstream of a tap, so no "tap to enable sound" prompt is ever needed.
+`playSound` additionally re-`resume()`s on each call, since backgrounding
+the app can re-suspend a context that was already unlocked.
+
+### The preference lives with the others
+
+`soundEnabled` sits in `webapp.ts` next to theme/haptics/language rather
+than inside the audio module — every user preference in this app persists
+through one CloudStorage layer, and a fourth one living somewhere else would
+be the odd one out. `sounds.ts` reads `isSoundEnabled()` before playing, a
+one-way dependency (sounds -> webapp) that keeps `webapp.ts` free of any
+audio knowledge. The Settings toggle mirrors the haptics one exactly,
+including playing a sound on switch-on as immediate confirmation — ordered
+*after* `setSoundEnabled(true)`, since `playSound` reads that flag.
+
+Sound triggers were added alongside the existing haptic calls rather than in
+new branches: the four outcomes haptics already distinguished (game over /
+perfect clear / cleared something / plain placement) are exactly the four a
+player needs told apart by ear, so the two feedback channels stay in sync by
+construction. Game-over and revive sounds came along for free from mirroring
+those same branches — slightly beyond the four sounds literally requested,
+but leaving them the only silent moments would have read as unfinished.
+
+### Verified with headless Chromium, by counting real audio nodes
+
+Web Audio was instrumented before app code ran (patching
+`createOscillator`/`createBufferSource` and proxying the `AudioContext`
+constructor), then driven through the app's own module — Vite's dev server
+serves `/src/audio/sounds.ts` as the same instance the app imports, so no
+test-only hook was added to product code. 14 checks: no AudioContext exists
+before the first gesture (the autoplay-policy contract) and one does after;
+grabbing a piece schedules an oscillator; placing one schedules both an
+oscillator and a noise burst; all five power-ups produce sound with at least
+three distinct oscillator/noise shapes between them (i.e. not one recycled
+blip); a perfect clear is a bigger sound than a normal clear (16 vs 4
+oscillators); clearing more units at once plays a longer arpeggio (6 vs 3);
+game over and revive both sound; the Settings toggle exists, and muting
+drops node creation to *exactly zero* rather than merely turning the gain
+down; unmuting restores it; and the preference survives a reload. All 14
+passed, alongside 118 engine tests, 65 API tests, `tsc --noEmit` across
+every package, and a full workspace `vite build`.

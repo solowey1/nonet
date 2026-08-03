@@ -126,6 +126,7 @@ export async function bootstrapTelegramWebApp(): Promise<void> {
   await loadThemePreference();
   await loadLanguagePreference();
   void loadHapticsPreference();
+  void loadSoundPreference();
 
   const webApp = getWebApp();
   if (!webApp) return;
@@ -474,6 +475,31 @@ export function hapticNotification(type: HapticNotificationType): void {
 export function hapticSelection(): void {
   if (!hapticsEnabled) return;
   getWebApp()?.HapticFeedback?.selectionChanged();
+}
+
+// --- Sound (§12 feedback, §19 round 6) ---
+// Same shape as the haptics preference above, and lives here for the same
+// reason: every user preference in this app is persisted through one
+// CloudStorage layer. The sounds themselves are synthesized in
+// `audio/sounds.ts`, which reads `isSoundEnabled()` before playing — a
+// one-way dependency (sounds.ts -> webapp.ts), so this module stays free of
+// any audio knowledge.
+
+const SOUND_PREFERENCE_KEY = "soundEnabled";
+let soundEnabled = true;
+
+export async function loadSoundPreference(): Promise<void> {
+  const stored = await cloudGetItem(SOUND_PREFERENCE_KEY);
+  soundEnabled = stored !== "false";
+}
+
+export function isSoundEnabled(): boolean {
+  return soundEnabled;
+}
+
+export function setSoundEnabled(enabled: boolean): void {
+  soundEnabled = enabled;
+  cloudSetItem(SOUND_PREFERENCE_KEY, String(enabled));
 }
 
 // --- Language (§19) ---
