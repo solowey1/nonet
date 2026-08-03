@@ -107,6 +107,7 @@ describe("reduce: game over", () => {
       rng: createInitialState(seed(6)).rng,
       score: 0,
       comboLevel: 0,
+      comboGraceActive: false,
       piecesPlaced: 0,
       unitsCleared: 0,
       maxComboLevel: 0,
@@ -135,6 +136,7 @@ describe("reduce: game over", () => {
       rng: createInitialState(seed(9)).rng,
       score: 0,
       comboLevel: 0,
+      comboGraceActive: false,
       piecesPlaced: 0,
       unitsCleared: 0,
       maxComboLevel: 0,
@@ -185,6 +187,44 @@ describe("reduce: powerups", () => {
   });
 });
 
+describe("reduce: combo (round 5 — multi-clear scaling and grace)", () => {
+  function twoClearableRows(): GameState["board"] {
+    let board = EMPTY_BOARD;
+    for (let c = 0; c < 9; c++) if (c !== 3 && c !== 4) board |= cellBit(0, c);
+    for (let c = 0; c < 9; c++) if (c !== 3 && c !== 4) board |= cellBit(1, c);
+    return board;
+  }
+
+  it("a placement clearing 2 units at once increases combo by 2, not a flat 1", () => {
+    const o2 = getPiece("O2");
+    const state: GameState = { ...createInitialState(seed(30)), board: twoClearableRows(), hand: [o2, null, null] };
+    const after = reduce(state, { t: 0, type: "place", slot: 0, r: 0, c: 3 });
+    expect(after.unitsCleared).toBe(2);
+    expect(after.comboLevel).toBe(2);
+    expect(after.comboGraceActive).toBe(false);
+  });
+
+  it("a non-clearing placement enters grace, and a second one zeroes the combo", () => {
+    const o2 = getPiece("O2");
+    const dot = getPiece("DOT");
+    let state: GameState = { ...createInitialState(seed(31)), board: twoClearableRows(), hand: [o2, dot, dot] };
+
+    state = reduce(state, { t: 0, type: "place", slot: 0, r: 0, c: 3 });
+    expect(state.comboLevel).toBe(2);
+    expect(state.comboGraceActive).toBe(false);
+
+    // Miss #1: clears nothing — combo survives on grace, not yet zeroed.
+    state = reduce(state, { t: 1, type: "place", slot: 1, r: 8, c: 8 });
+    expect(state.comboLevel).toBe(2);
+    expect(state.comboGraceActive).toBe(true);
+
+    // Miss #2: the grace is spent — combo actually dies now.
+    state = reduce(state, { t: 2, type: "place", slot: 2, r: 8, c: 7 });
+    expect(state.comboLevel).toBe(0);
+    expect(state.comboGraceActive).toBe(false);
+  });
+});
+
 describe("reduce: revive", () => {
   it("throws if the run isn't actually over", () => {
     const state = createInitialState(seed(20));
@@ -206,6 +246,7 @@ describe("reduce: revive", () => {
       rng: createInitialState(seed(21)).rng,
       score: 1234,
       comboLevel: 5,
+      comboGraceActive: true,
       piecesPlaced: 10,
       unitsCleared: 3,
       maxComboLevel: 5,
@@ -219,6 +260,7 @@ describe("reduce: revive", () => {
     expect(revived.status).toBe("playing");
     expect(revived.board).toBe(EMPTY_BOARD);
     expect(revived.comboLevel).toBe(0);
+    expect(revived.comboGraceActive).toBe(false);
     // Untouched: score/stats are the player's, and revive isn't a power-up.
     expect(revived.score).toBe(1234);
     expect(revived.piecesPlaced).toBe(10);

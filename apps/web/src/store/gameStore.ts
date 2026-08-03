@@ -470,29 +470,44 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     },
 
     async buyRevive() {
-      const { sessionToken, runId, runToken, game, actionLog, revivePending } = get();
+      const { sessionToken, runId, runToken, game, actionLog, revivePending, inventory } = get();
       if (!sessionToken || !runId || !runToken || game.status !== "gameover" || revivePending) return "failed";
 
       set({ revivePending: true });
       try {
-        let invoiceLink: string, purchaseId: string;
-        try {
-          const invoice = await postShopInvoice(sessionToken, "revive", runId);
-          invoiceLink = invoice.invoiceLink;
-          purchaseId = invoice.purchaseId;
-        } catch (err) {
-          console.error("failed to mint a revive invoice", err);
-          return "failed";
+        let consumeToken: string;
+        const stocked = (inventory.revive ?? 0) > 0;
+
+        if (stocked) {
+          // Free: spend one already-owned revive (bought in bulk from the
+          // Shop, §19 round 5) instead of paying Stars again right now.
+          try {
+            const consumed = await postInventoryConsume(runToken, runId, "revive");
+            consumeToken = consumed.consumeToken;
+          } catch (err) {
+            console.error("failed to consume a stocked revive", err);
+            return "failed";
+          }
+        } else {
+          let invoiceLink: string;
+          try {
+            const invoice = await postShopInvoice(sessionToken, "revive", runId);
+            invoiceLink = invoice.invoiceLink;
+            consumeToken = invoice.purchaseId;
+          } catch (err) {
+            console.error("failed to mint a revive invoice", err);
+            return "failed";
+          }
+
+          const status = await openInvoice(invoiceLink);
+          if (status !== "paid") return status;
+          // §13: openInvoice's "paid" is optimistic client-side signal — the
+          // bot's successful_payment webhook is the actual source of truth for
+          // crediting, but the purchase row it needs already exists (created
+          // above) so the consumeToken is valid the instant Telegram reports it.
         }
 
-        const status = await openInvoice(invoiceLink);
-        if (status !== "paid") return status;
-
-        // §13: openInvoice's "paid" is optimistic client-side signal — the
-        // bot's successful_payment webhook is the actual source of truth for
-        // crediting, but the purchase row it needs already exists (created
-        // above) so the consumeToken is valid the instant Telegram reports it.
-        const reviveAction = { t: Date.now(), type: "revive" as const, consumeToken: purchaseId };
+        const reviveAction = { t: Date.now(), type: "revive" as const, consumeToken };
         let next: GameState;
         try {
           next = reduce(game, reviveAction);
@@ -512,6 +527,7 @@ export const useGameStore = create<GameStoreState>((set, get) => {
         setClosingConfirmation(true);
         hapticNotification("success");
         void maybeCheckpoint();
+        if (stocked) void get().refreshInventory(); // just spent one from stock — keep the displayed count honest
         return "purchased";
       } finally {
         set({ revivePending: false });

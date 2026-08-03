@@ -189,16 +189,11 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
           <ScoreHud
             score={game.score}
             comboLevel={game.comboLevel}
+            comboGraceActive={game.comboGraceActive}
             bestScore={
               profile?.bestRun ? Math.max(profile.bestRun.score, game.score) : game.score > 0 ? game.score : null
             }
           />
-          {/* Disappears the instant a powerup is used (§19 round 4) — game.powerupsUsed is already live engine state. */}
-          {game.powerupsUsed === 0 && (
-            <Badge variant="secondary" className="mt-1 w-fit">
-              <Sparkles className="h-3 w-3" aria-hidden="true" /> {t("game.pureRun")}
-            </Badge>
-          )}
         </div>
         <div className={styles.controlsArea}>
           <Button variant="secondary" size="icon" onClick={goToMenu} aria-label={t("game.home")}>
@@ -211,6 +206,12 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
       </div>
 
       <div className={styles.inventoryArea}>
+        {/* Disappears the instant a powerup is used (§19 round 5) — game.powerupsUsed is already live engine state. */}
+        {game.powerupsUsed === 0 && (
+          <Badge variant="secondary" className="mx-auto mb-1 w-fit landscape:mx-0">
+            <Sparkles className="h-3 w-3" aria-hidden="true" /> {t("game.pureRun")}
+          </Badge>
+        )}
         <InventoryBar inventory={inventory} armed={armedPowerup} onArm={armPowerup} />
       </div>
 
@@ -231,6 +232,7 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
             game={game}
             finishResult={finishResult}
             revivePending={revivePending}
+            hasStockedRevive={(inventory.revive ?? 0) > 0}
             onRestart={() => void newRun()}
             onBuyRevive={buyRevive}
           />

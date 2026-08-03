@@ -105,6 +105,7 @@
   .inventoryArea {
     grid-area: inventory;
     display: flex;
+    flex-direction: column;
     align-items: flex-start;
     padding: 4px 4px 4px 12px;
   }
@@ -145,11 +146,17 @@
 }
 
 .hint {
-  /* Fixed (not min-) height: the message can wrap to 2 lines on a narrow
-     viewport, and a min-height only sets a floor — it doesn't stop the box
-     from growing past it and pushing the board down. A fixed height with
-     clipped overflow can never grow no matter how the text wraps. */
-  height: 2.4em;
+  /* Fixed (not min-) height: a min-height only sets a floor — it doesn't
+     stop the box from growing past it and pushing the board down. 2.4em
+     (2 lines) clipped a real message on narrow screens (the fill "region
+     too large" hint, with an interpolated count, routinely needs 3) — sized
+     for 3 lines instead, with `line-clamp` as a last-resort ellipsis for
+     anything that still doesn't fit, rather than a silent mid-word cut. */
+  height: 3.6em;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
   overflow: hidden;
   text-align: center;
   font-size: 0.8rem;

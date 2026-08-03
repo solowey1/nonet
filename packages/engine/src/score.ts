@@ -85,7 +85,28 @@ export function scorePowerupClear(input: {
   };
 }
 
-/** Next combo level given whether this placement cleared any units. */
-export function nextComboLevel(currentComboLevel: number, unitsCleared: number): number {
-  return unitsCleared > 0 ? currentComboLevel + 1 : 0;
+export interface ComboState {
+  readonly comboLevel: number;
+  readonly comboGraceActive: boolean;
+}
+
+/**
+ * Next combo state given how many units this placement cleared (§6 round 5).
+ * A clearing placement bumps the level by the *number* of units cleared at
+ * once — clearing 2 lines (or a line + a 3x3 block) simultaneously is a
+ * harder move than clearing 1, so it's worth more combo, not the same flat
+ * +1. A non-clearing placement doesn't reset the combo immediately: it gets
+ * one grace placement first (`comboGraceActive` flips on — the UI reads this
+ * as "about to expire") before a *second* consecutive non-clearing placement
+ * actually zeroes it. Without the grace step, holding a combo across more
+ * than one placement at a time is nearly impossible.
+ */
+export function nextCombo(current: ComboState, unitsCleared: number): ComboState {
+  if (unitsCleared > 0) {
+    return { comboLevel: current.comboLevel + unitsCleared, comboGraceActive: false };
+  }
+  if (current.comboLevel === 0 || current.comboGraceActive) {
+    return { comboLevel: 0, comboGraceActive: false };
+  }
+  return { comboLevel: current.comboLevel, comboGraceActive: true };
 }

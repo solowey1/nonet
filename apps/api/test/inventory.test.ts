@@ -2,7 +2,10 @@ import { BOARD_SIZE, isFilled, reduce, type GameState } from "@nonet/engine";
 import type { Action } from "@nonet/shared";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
+import { db } from "../src/db/client.js";
+import { inventoryBalance } from "../src/db/schema.js";
 import { env } from "../src/env.js";
+import { validateConsumeTokens } from "../src/services/inventory.js";
 import { autoplay } from "./helpers/autoplay.js";
 import { migrateTestDb, resetTestDb } from "./helpers/db.js";
 import { buildSignedInitData } from "./helpers/telegram.js";
@@ -123,6 +126,48 @@ describe("POST /api/inventory/consume", () => {
       payload: { runId: "00000000-0000-7000-8000-000000000000", item: "pencil" },
     });
     expect(res.statusCode).toBe(403);
+  });
+});
+
+describe("stocked revive (§19 round 5 — bulk shop tiers spent for free)", () => {
+  it("consumes a stocked revive like any other inventory item, and the resulting token validates as a legitimate revive", async () => {
+    const { token } = await session(8);
+    const { runId, runToken } = await startRun(token);
+    const userId = 8n;
+    await db.insert(inventoryBalance).values({ userId, item: "revive", qty: 3 });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/inventory/consume",
+      headers: { authorization: `Bearer ${runToken}` },
+      payload: { runId, item: "revive" },
+    });
+    expect(res.statusCode).toBe(200);
+    const { consumeToken, remaining } = res.json();
+    expect(remaining).toBe(2);
+
+    const reviveAction: Action = { t: 123, type: "revive", consumeToken };
+    const ok = await validateConsumeTokens(db, userId, runId, [reviveAction]);
+    expect(ok).toBe(true);
+  });
+
+  it("rejects a stocked-revive token claimed against a different run", async () => {
+    const { token } = await session(9);
+    const { runId, runToken } = await startRun(token);
+    const userId = 9n;
+    await db.insert(inventoryBalance).values({ userId, item: "revive", qty: 1 });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/inventory/consume",
+      headers: { authorization: `Bearer ${runToken}` },
+      payload: { runId, item: "revive" },
+    });
+    const { consumeToken } = res.json();
+
+    const reviveAction: Action = { t: 123, type: "revive", consumeToken };
+    const ok = await validateConsumeTokens(db, userId, "00000000-0000-7000-8000-000000000000", [reviveAction]);
+    expect(ok).toBe(false);
   });
 });
 

@@ -33,7 +33,7 @@ import {
   type RocketOrientation,
 } from "./powerups.js";
 import { createRngFromBytes, type RngState } from "./rng.js";
-import { nextComboLevel, scorePlacement, scorePowerupClear } from "./score.js";
+import { nextCombo, scorePlacement, scorePowerupClear } from "./score.js";
 
 export type Hand = readonly [Piece | null, Piece | null, Piece | null];
 
@@ -45,6 +45,8 @@ export interface GameState {
   readonly rng: RngState;
   readonly score: number;
   readonly comboLevel: number;
+  /** True the placement after a non-clearing one — one grace placement before the combo actually zeroes (§6 round 5). */
+  readonly comboGraceActive: boolean;
   readonly piecesPlaced: number;
   readonly unitsCleared: number;
   readonly maxComboLevel: number;
@@ -97,6 +99,7 @@ export function createInitialState(seed: Uint8Array): GameState {
     rng,
     score: 0,
     comboLevel: 0,
+    comboGraceActive: false,
     piecesPlaced: 0,
     unitsCleared: 0,
     maxComboLevel: 0,
@@ -138,6 +141,7 @@ function reduceRevive(state: GameState): GameState {
     ...state,
     board: EMPTY_BOARD,
     comboLevel: 0,
+    comboGraceActive: false,
     status: "playing",
   };
   return { ...next, status: isGameOver(next.board, next.hand) ? "gameover" : "playing" };
@@ -157,7 +161,8 @@ function reducePlace(state: GameState, action: PlaceAction): GameState {
 
   const placedBoard = placePiece(state.board, piece, action.r, action.c);
   const { board: clearedBoard, unitsCleared } = resolveClears(placedBoard);
-  const comboLevelAfter = nextComboLevel(state.comboLevel, unitsCleared);
+  const combo = nextCombo({ comboLevel: state.comboLevel, comboGraceActive: state.comboGraceActive }, unitsCleared);
+  const comboLevelAfter = combo.comboLevel;
   const isEmpty = isBoardEmpty(clearedBoard);
   const scoreResult = scorePlacement({
     pieceCells: cellCount(piece),
@@ -188,6 +193,7 @@ function reducePlace(state: GameState, action: PlaceAction): GameState {
     rng,
     score: nextScore,
     comboLevel: comboLevelAfter,
+    comboGraceActive: combo.comboGraceActive,
     piecesPlaced: state.piecesPlaced + 1,
     unitsCleared: state.unitsCleared + unitsCleared,
     maxComboLevel: Math.max(state.maxComboLevel, comboLevelAfter),
@@ -250,6 +256,7 @@ function reducePowerup(state: GameState, action: PowerupAction): GameState {
     rng: state.rng,
     score: state.score + scoreResult.turnScore,
     comboLevel: state.comboLevel,
+    comboGraceActive: state.comboGraceActive,
     piecesPlaced: state.piecesPlaced,
     unitsCleared: state.unitsCleared + unitsCleared,
     maxComboLevel: state.maxComboLevel,

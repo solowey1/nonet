@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Award, Share2, Star } from "lucide-react";
+import { Award, Heart, Share2, Star } from "lucide-react";
 import type { GameState } from "@nonet/engine";
 import type { FinishResult, ReviveOutcome } from "../store/gameStore.js";
 import { hapticSelection, shareViaTelegram } from "../telegram/webapp.js";
@@ -10,6 +10,7 @@ interface GameOverOverlayProps {
   readonly game: GameState;
   readonly finishResult: FinishResult | null;
   readonly revivePending: boolean;
+  readonly hasStockedRevive: boolean;
   readonly onRestart: () => void;
   readonly onBuyRevive: () => Promise<ReviveOutcome>;
 }
@@ -24,7 +25,7 @@ const REVIVE_HINT_KEYS: Record<Exclude<ReviveOutcome, "purchased">, string> = {
 // to "gameover" — that only happens once the player leaves this screen (see
 // gameStore's `finishRun`), specifically so a revive purchase is still valid
 // against this exact run right up until then.
-export function GameOverOverlay({ game, finishResult, revivePending, onRestart, onBuyRevive }: GameOverOverlayProps) {
+export function GameOverOverlay({ game, finishResult, revivePending, hasStockedRevive, onRestart, onBuyRevive }: GameOverOverlayProps) {
   const { t } = useTranslation();
   const [reviveHint, setReviveHint] = useState<string | null>(null);
 
@@ -77,6 +78,10 @@ export function GameOverOverlay({ game, finishResult, revivePending, onRestart, 
         <Button variant="outline" size="lg" disabled={revivePending} onClick={() => void handleRevive()}>
           {revivePending ? (
             "…"
+          ) : hasStockedRevive ? (
+            <>
+              <Heart className="h-4 w-4" aria-hidden="true" /> {t("gameOver.reviveFree")}
+            </>
           ) : (
             <>
               <Star className="h-4 w-4" fill="#FFC335" stroke="#E98615" aria-hidden="true" /> {t("gameOver.revive")}

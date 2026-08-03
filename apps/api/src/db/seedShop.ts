@@ -39,6 +39,18 @@ const STARTING_SKUS = [
     starsAmount: 30,
     contents: {}, // not an inventory grant — see the invoice/payment handlers
   },
+  // Bulk-stockable revive tiers (§19 round 5) — deliberately separate SKUs
+  // from "revive" above, not a change to it: "revive" stays the game-over
+  // screen's real-money pay-right-now-for-this-run purchase (contents: {},
+  // consumed via the purchases table), while these credit a genuine
+  // "revive" inventory item via the normal SKU-contents crediting path, to
+  // be spent for free later from the game-over screen once in stock.
+  // Pricing per unit discounts with bundle size: 1x at the base price, then
+  // -30/-75/-350 off buying 3x/5x/20x outright.
+  { sku: "revive_1", title: "1 Revive", description: "1 x revive (stock up)", starsAmount: 30, contents: { revive: 1 } },
+  { sku: "revive_3", title: "3 Revives", description: "3 x revive (stock up)", starsAmount: 60, contents: { revive: 3 } },
+  { sku: "revive_5", title: "5 Revives", description: "5 x revive (stock up)", starsAmount: 75, contents: { revive: 5 } },
+  { sku: "revive_20", title: "20 Revives", description: "20 x revive (stock up)", starsAmount: 250, contents: { revive: 20 } },
 ] as const;
 
 export async function seedShopSkus(db: ReturnType<typeof drizzle>): Promise<void> {

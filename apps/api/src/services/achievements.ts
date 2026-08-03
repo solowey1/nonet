@@ -145,23 +145,59 @@ async function rollingSum(db: Executor, userId: bigint, column: "totalScore" | "
   return row?.total ?? 0;
 }
 
+interface RunAggregates {
+  readonly bestScore: number;
+  readonly bestCombo: number;
+  readonly bestUnitsCleared: number;
+  readonly bestPerfectClears: number;
+  readonly bestPureScore: number;
+}
+
+/**
+ * Lifetime bests across every verified run — this is what makes `run_*`
+ * conditions retroactive: a player who already scored 20000 before an
+ * achievement existed (or before their most recent run) still has that run
+ * sitting in `runs`, so the very next evaluation (a new run finishing, or
+ * just opening the app — see `evaluateLifetimeAchievements`) sees it and
+ * unlocks immediately, without needing a fresh run that re-hits the same bar.
+ */
+async function getRunAggregates(db: Executor, userId: bigint): Promise<RunAggregates> {
+  const [row] = await db
+    .select({
+      bestScore: sql<number>`coalesce(max(${runs.score}), 0)::int`,
+      bestCombo: sql<number>`coalesce(max(${runs.maxCombo}), 0)::int`,
+      bestUnitsCleared: sql<number>`coalesce(max(${runs.unitsCleared}), 0)::int`,
+      bestPerfectClears: sql<number>`coalesce(max(${runs.perfectClears}), 0)::int`,
+      bestPureScore: sql<number>`coalesce(max(${runs.score}) filter (where not ${runs.usedPowerups}), 0)::int`,
+    })
+    .from(runs)
+    .where(and(eq(runs.userId, userId), eq(runs.verified, true)));
+  return {
+    bestScore: row?.bestScore ?? 0,
+    bestCombo: row?.bestCombo ?? 0,
+    bestUnitsCleared: row?.bestUnitsCleared ?? 0,
+    bestPerfectClears: row?.bestPerfectClears ?? 0,
+    bestPureScore: row?.bestPureScore ?? 0,
+  };
+}
+
 async function checkCondition(
   db: Executor,
   userId: bigint,
   condition: AchievementCondition,
-  run: RunAchievementContext,
+  agg: RunAggregates,
 ): Promise<boolean> {
   switch (condition.kind) {
     case "run_score":
-      return run.score >= condition.threshold;
+      return agg.bestScore >= condition.threshold;
     case "run_combo":
-      return run.maxCombo >= condition.threshold;
+      return agg.bestCombo >= condition.threshold;
     case "run_units_cleared":
-      return run.unitsCleared >= condition.threshold;
+      return agg.bestUnitsCleared >= condition.threshold;
     case "run_perfect_clears":
-      return run.perfectClears >= condition.threshold;
+      return agg.bestPerfectClears >= condition.threshold;
     case "run_pure_score":
-      return !run.usedPowerups && run.score >= condition.threshold;
+      return agg.bestPureScore >= condition.threshold;
     case "lifetime_pieces":
       return (await getLifetimePieces(db, userId)) >= condition.threshold;
     case "own_all_themes":
@@ -201,13 +237,7 @@ function dayGatePasses(def: AchievementDef, state: AchievementState, today: stri
   return !last || Math.abs(new Date(today).getTime() - new Date(last).getTime()) / 86_400_000 >= days;
 }
 
-export async function evaluateRunAchievements(
-  db: Executor,
-  userId: bigint,
-  run: RunAchievementContext,
-): Promise<UnlockedAchievement[]> {
-  await updateDailyStatsForRun(db, userId, run);
-
+async function evaluateNonLoginAchievements(db: Executor, userId: bigint, agg: RunAggregates): Promise<UnlockedAchievement[]> {
   const today = todayUTCDateString();
   const unlocked: UnlockedAchievement[] = [];
 
@@ -215,7 +245,7 @@ export async function evaluateRunAchievements(
     if (def.condition.kind === "login_streak") continue;
     const state = await loadState(db, userId, def.id);
     if (!dayGatePasses(def, state, today)) continue;
-    if (!(await checkCondition(db, userId, def.condition, run))) continue;
+    if (!(await checkCondition(db, userId, def.condition, agg))) continue;
 
     await grantReward(db, userId, def.reward);
     await recordCompletion(db, userId, def.id, def.repeatable ? { lastAwardedDay: today } : state.progress);
@@ -223,6 +253,29 @@ export async function evaluateRunAchievements(
   }
 
   return unlocked;
+}
+
+export async function evaluateRunAchievements(
+  db: Executor,
+  userId: bigint,
+  run: RunAchievementContext,
+): Promise<UnlockedAchievement[]> {
+  await updateDailyStatsForRun(db, userId, run);
+  const agg = await getRunAggregates(db, userId);
+  return evaluateNonLoginAchievements(db, userId, agg);
+}
+
+/**
+ * Catches up every non-login-streak achievement from scratch, using only
+ * already-persisted aggregates — no run context needed. Called from
+ * `/api/session` so a player who qualified for something (before the
+ * achievement existed, or on a run finished before this evaluation logic
+ * changed) gets it the moment they next open the app, not only the next time
+ * they happen to finish a fresh run.
+ */
+export async function evaluateLifetimeAchievements(db: Executor, userId: bigint): Promise<UnlockedAchievement[]> {
+  const agg = await getRunAggregates(db, userId);
+  return evaluateNonLoginAchievements(db, userId, agg);
 }
 
 export async function evaluateLoginAchievements(db: Executor, userId: bigint, loginStreak: number): Promise<UnlockedAchievement[]> {
@@ -255,16 +308,7 @@ export interface AchievementSnapshotEntry {
 
 /** Live progress for every catalogue achievement, for GET /api/achievements — recomputed on read, nothing cached beyond `timesCompleted`/`lastCompletedAt`. */
 export async function getAchievementsSnapshot(db: Executor, userId: bigint): Promise<AchievementSnapshotEntry[]> {
-  const [runAgg] = await db
-    .select({
-      bestScore: sql<number>`coalesce(max(${runs.score}), 0)::int`,
-      bestCombo: sql<number>`coalesce(max(${runs.maxCombo}), 0)::int`,
-      bestUnitsCleared: sql<number>`coalesce(max(${runs.unitsCleared}), 0)::int`,
-      bestPerfectClears: sql<number>`coalesce(max(${runs.perfectClears}), 0)::int`,
-      bestPureScore: sql<number>`coalesce(max(${runs.score}) filter (where not ${runs.usedPowerups}), 0)::int`,
-    })
-    .from(runs)
-    .where(and(eq(runs.userId, userId), eq(runs.verified, true)));
+  const runAgg = await getRunAggregates(db, userId);
 
   const today = todayUTCDateString();
   const [todayRow] = await db.select({ streak: dailyStats.streak }).from(dailyStats).where(and(eq(dailyStats.userId, userId), eq(dailyStats.day, today)));
@@ -285,23 +329,23 @@ export async function getAchievementsSnapshot(db: Executor, userId: bigint): Pro
     let target = 1;
     switch (def.condition.kind) {
       case "run_score":
-        current = runAgg?.bestScore ?? 0;
+        current = runAgg.bestScore;
         target = def.condition.threshold;
         break;
       case "run_combo":
-        current = runAgg?.bestCombo ?? 0;
+        current = runAgg.bestCombo;
         target = def.condition.threshold;
         break;
       case "run_units_cleared":
-        current = runAgg?.bestUnitsCleared ?? 0;
+        current = runAgg.bestUnitsCleared;
         target = def.condition.threshold;
         break;
       case "run_perfect_clears":
-        current = runAgg?.bestPerfectClears ?? 0;
+        current = runAgg.bestPerfectClears;
         target = def.condition.threshold;
         break;
       case "run_pure_score":
-        current = runAgg?.bestPureScore ?? 0;
+        current = runAgg.bestPureScore;
         target = def.condition.threshold;
         break;
       case "lifetime_pieces":

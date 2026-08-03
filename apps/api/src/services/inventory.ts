@@ -70,9 +70,14 @@ export async function grantItems(
  * makes "consumed at use time" actually enforceable server-side: the engine's
  * own replay has no concept of inventory, so a tampered log that adds extra
  * power-up actions (or replays one token twice) would otherwise sail through
- * replay verification untouched. `revive` actions get the same treatment,
- * checked against `purchases` instead of `inventoryLedger` (a revive isn't
- * an inventory item — see reduce.ts's `reduceRevive`).
+ * replay verification untouched. `revive` actions accept EITHER of two token
+ * shapes (§19 round 5 added the second): a `purchases` row id — the original
+ * "pay right now, right here" path, a real-money purchase scoped to this
+ * exact run — or an `inventoryLedger` row id, exactly like a power-up's
+ * token, for a revive that was bought in bulk from the Shop ahead of time and
+ * is now being spent from stock. Disambiguated by shape alone (UUID vs plain
+ * integer), same as the two token kinds were already distinguished before
+ * this existed as a union.
  */
 export async function validateConsumeTokens(db: Executor, userId: bigint, runId: string, actions: readonly Action[]): Promise<boolean> {
   const powerupActions = actions.filter((a): a is Extract<Action, { type: "powerup" }> => a.type === "powerup");
@@ -116,21 +121,45 @@ export async function validateConsumeTokens(db: Executor, userId: bigint, runId:
 
   if (reviveActions.length > 0) {
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (reviveTokens.some((t) => !uuidPattern.test(t))) return false; // fabricated/malformed token — never a valid purchase id
+    const numericPattern = /^\d+$/;
+    const purchaseTokens = reviveTokens.filter((t) => uuidPattern.test(t));
+    const ledgerTokens = reviveTokens.filter((t) => numericPattern.test(t));
+    if (purchaseTokens.length + ledgerTokens.length !== reviveTokens.length) return false; // fabricated/malformed token — matches neither shape
 
-    const rows = await db
-      .select({ id: purchases.id })
-      .from(purchases)
-      .where(
-        and(
-          inArray(purchases.id, reviveTokens),
-          eq(purchases.userId, userId),
-          eq(purchases.runId, runId),
-          eq(purchases.sku, "revive"),
-          eq(purchases.status, "paid"),
-        ),
-      );
-    const validIds = new Set(rows.map((r) => r.id));
+    const validIds = new Set<string>();
+
+    if (purchaseTokens.length > 0) {
+      const rows = await db
+        .select({ id: purchases.id })
+        .from(purchases)
+        .where(
+          and(
+            inArray(purchases.id, purchaseTokens),
+            eq(purchases.userId, userId),
+            eq(purchases.runId, runId),
+            eq(purchases.sku, "revive"),
+            eq(purchases.status, "paid"),
+          ),
+        );
+      for (const r of rows) validIds.add(r.id);
+    }
+
+    if (ledgerTokens.length > 0) {
+      const rows = await db
+        .select({ id: inventoryLedger.id })
+        .from(inventoryLedger)
+        .where(
+          and(
+            inArray(inventoryLedger.id, ledgerTokens.map((t) => BigInt(t))),
+            eq(inventoryLedger.userId, userId),
+            eq(inventoryLedger.runId, runId),
+            eq(inventoryLedger.item, "revive"),
+            eq(inventoryLedger.reason, "use"),
+          ),
+        );
+      for (const r of rows) validIds.add(r.id.toString());
+    }
+
     if (!reviveActions.every((action) => validIds.has(action.consumeToken))) return false;
   }
 
