@@ -9,6 +9,22 @@ import { grantDailyGiftIfNeeded } from "../services/dailyGift.js";
 import { grantWelcomeGift } from "../services/inventory.js";
 import { validateInitData } from "../telegram/initData.js";
 
+/**
+ * The link that actually launches the Mini App. Sharing WEBAPP_URL sends
+ * people to the website, which can't start a Mini App — only a `t.me` deep
+ * link can, and `?startapp=` is the documented form for opening one from a
+ * link. Computed once at module load since it's pure config. The `startapp`
+ * payload is also where a referral code would go later (`users.referredBy`
+ * already exists for it).
+ */
+export function buildMiniAppUrl(botUsername?: string, shortName?: string): string | null {
+  if (!botUsername) return null;
+  const handle = botUsername.replace(/^@/, ""); // tolerate a copy-pasted "@nonetgamebot"
+  return `https://t.me/${shortName ? `${handle}/${shortName}` : handle}?startapp=play`;
+}
+
+const MINI_APP_URL = buildMiniAppUrl(env.BOT_USERNAME, env.MINI_APP_SHORT_NAME);
+
 interface ProfileFields {
   readonly id: number;
   readonly username?: string | undefined;
@@ -99,6 +115,7 @@ async function issueSession(reply: FastifyReply, profile: ProfileFields) {
     inventory,
     activeRun,
     dailyGift,
+    miniAppUrl: MINI_APP_URL,
   });
 }
 

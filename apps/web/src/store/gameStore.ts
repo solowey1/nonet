@@ -32,6 +32,7 @@ import {
   hapticNotification,
   openInvoice,
   setClosingConfirmation,
+  setShareTargetUrl,
 } from "../telegram/webapp.js";
 import { playSound } from "../audio/sounds.js";
 import { maskToCells } from "../utils/bitmask.js";
@@ -337,6 +338,10 @@ export const useGameStore = create<GameStoreState>((set, get) => {
               })();
 
         set({ sessionToken: session.token, inventory: session.inventory });
+        // Only the server knows the bot's username, so the link a share card
+        // points at arrives with the session rather than being baked into
+        // this bundle (§19 round 7).
+        setShareTargetUrl(session.miniAppUrl);
 
         // The main menu is always the landing screen (§19 step 6) — a
         // resumed run is loaded into the store so "Continue" is available,

@@ -541,8 +541,22 @@ export function setLanguageMode(mode: LanguageMode): void {
  * plain `window.open` outside Telegram so the flow is still exercisable
  * (if not "native") in a normal browser during dev/testing.
  */
+/**
+ * What a shared card links to. Defaults to this page's own origin, which is
+ * what it used to always be — but a plain website link cannot *launch* a Mini
+ * App, so a recipient tapping it just landed on the site (§19 round 7). The
+ * server supplies the bot's `t.me` deep link at session time instead (see
+ * `sessionResponseSchema.miniAppUrl`); only it knows the bot's username.
+ */
+let shareTargetUrl: string | null = null;
+
+export function setShareTargetUrl(url: string | null): void {
+  shareTargetUrl = url;
+}
+
 export function shareViaTelegram(text: string): void {
-  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(window.location.origin)}&text=${encodeURIComponent(text)}`;
+  const target = shareTargetUrl ?? window.location.origin;
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(target)}&text=${encodeURIComponent(text)}`;
   const webApp = getWebApp();
   if (webApp?.openTelegramLink) {
     webApp.openTelegramLink(shareUrl);

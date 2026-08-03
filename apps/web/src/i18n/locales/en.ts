@@ -23,6 +23,8 @@ export const en = {
     shop: "Shop",
     settings: "Settings",
     achievements: "Achievements",
+    share: "Tell friends",
+    shareInvite: "I'm playing NONET — a 9x9 block puzzle. Come beat my score! 🧩",
     confirmNewGameTitle: "Unfinished game",
     confirmNewGameBody: "You have an unfinished game. Are you sure you want to start a new one?",
     confirmNewGameConfirm: "Start new game",

@@ -17,6 +17,7 @@ import { RocketGutters } from "./components/RocketGutters.js";
 import { ScoreHud } from "./components/ScoreHud.js";
 import { SettingsScreen } from "./components/SettingsScreen.js";
 import { ShopOverlay } from "./components/ShopOverlay.js";
+import { SoundToggleButton } from "./components/SoundToggleButton.js";
 import { useCellSize } from "./hooks/useCellSize.js";
 import { useDragPlacement } from "./hooks/useDragPlacement.js";
 import { usePowerupTargeting, type TargetingState } from "./hooks/usePowerupTargeting.js";
@@ -200,12 +201,16 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
             }
           />
         </div>
+        {/* Order is Shop, Sound, Home (§19 round 7) — Home last, furthest
+            right, so the one control that leaves the run isn't the one
+            nearest a stray thumb. */}
         <div className={styles.controlsArea}>
-          <Button variant="secondary" size="icon" onClick={goToMenu} aria-label={t("game.home")}>
-            <Home className="h-[18px] w-[18px]" aria-hidden="true" />
-          </Button>
           <Button variant="secondary" size="icon" onClick={() => setShopOpen(true)} aria-label={t("mainMenu.shop")}>
             <Store className="h-4 w-4" aria-hidden="true" />
+          </Button>
+          <SoundToggleButton />
+          <Button variant="secondary" size="icon" onClick={goToMenu} aria-label={t("game.home")}>
+            <Home className="h-[18px] w-[18px]" aria-hidden="true" />
           </Button>
         </div>
       </div>

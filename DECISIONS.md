@@ -1873,3 +1873,81 @@ drops node creation to *exactly zero* rather than merely turning the gain
 down; unmuting restores it; and the preference survives a reload. All 14
 passed, alongside 118 engine tests, 65 API tests, `tsc --noEmit` across
 every package, and a full workspace `vite build`.
+
+## Round 7: share links that actually open the Mini App, and corner controls
+
+### A shared score linked to the website, which cannot launch a Mini App
+
+`shareViaTelegram` built its card from `window.location.origin` — the
+deployment's own web origin. Tapping that in a Telegram chat opens the
+*website*, and a website has no way to start a Mini App; only a `t.me` deep
+link does. So every share ever sent was a dead end for the recipient. Fixed
+by pointing shares at `https://t.me/<bot>?startapp=play` instead (or
+`t.me/<bot>/<short-name>?startapp=play` for a *named* Mini App, hence the
+optional `MINI_APP_SHORT_NAME`).
+
+**Where the bot username comes from** was the real design question. The web
+container is nginx serving a static build, so it never reads `.env` at
+runtime — a `VITE_BOT_USERNAME` would have to be a Docker *build arg*, which
+means the value gets frozen into the bundle and changing it needs a web
+rebuild. That is precisely the failure mode round 4 spent a whole section
+diagnosing (`PREMIUM_THEMES` frozen into the api image at build time), so
+repeating the shape of that bug for a second config value was not appealing.
+Instead the **api** builds the link — it already receives the whole `.env`
+via compose's `env_file` — and hands it to the client in the session
+response as `miniAppUrl`. Changing the username is now a config edit plus an
+api restart, with no rebuild of anything.
+
+`BOT_USERNAME` is deliberately **optional** rather than required. A missing
+value degrades sharing back to the old website link, which is strictly
+better than an API that refuses to boot over a share button; the failure
+mode of a required var here would be "the entire game is down because
+nobody filled in a cosmetic field." The link builder is exported and
+unit-tested (`buildMiniAppUrl`) rather than left as module-scope config,
+because the exact link *shape* is the thing that was broken — including
+tolerating a username pasted with its leading `@`.
+
+The client keeps this in `webapp.ts` module state via `setShareTargetUrl`,
+set once from the store's bootstrap, matching how theme/haptics/language/
+sound config already live there. Every existing `shareViaTelegram(text)`
+call site is unchanged.
+
+### Share and Sound as corner controls
+
+Share moved onto the main menu's top-left and a sound mute/unmute onto its
+top-right, both plain square icon buttons. Their offsets use the same
+`--nonet-safe-*` insets the menu container already uses, which on Telegram
+fullscreen include its own chevron/menu strip — without that, the top-right
+button would sit *under* Telegram's native controls, exactly the collision
+round 2 had to fix for the in-game header.
+
+In-game, the controls are now ordered **Shop, Sound, Home** as requested;
+Home ending up furthest right also means the one control that leaves the run
+isn't the one nearest a stray thumb.
+
+`SoundToggleButton` is shared between both screens and reads the preference
+once on mount rather than through store state: `App`'s `switch (screen)`
+unmounts every screen on navigation, so a fresh mount always re-reads the
+current value, and Settings' own switch is a separate mount for the same
+reason. No reactive global state is needed for the three of them to agree.
+A generic invite string is shared when the player has no best run yet.
+
+### Verified with headless Chromium (API configured with a real BOT_USERNAME)
+
+14 checks: the menu has both corner buttons, they are square, and they sit
+in the top-left and top-right respectively; tapping Share opens a Telegram
+share link whose embedded `url` is exactly
+`https://t.me/nonetgamebot?startapp=play` and explicitly *not* the site
+origin; the menu's sound toggle flips its state and that choice survives a
+full page reload; the in-game row shows Shop, Sound, Home in that left-to-
+right order on a single line. All 14 passed, plus 5 new API tests covering
+the link shape and the null-when-unconfigured fallback (70 API tests total),
+118 engine tests, `tsc --noEmit` across every package, and a full workspace
+`vite build`.
+
+One note on method: an earlier version of the reload check imported
+`webapp.ts` directly in the page to read `isSoundEnabled()`, and reported a
+false failure — editing that file mid-session makes Vite hand the running
+app an HMR-versioned (`?t=`) copy, so a plain dynamic import resolves to a
+*different* module instance with default state. Checking persistence through
+an actual page reload tests the real thing and can't be fooled that way.
