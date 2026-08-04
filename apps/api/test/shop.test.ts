@@ -41,20 +41,61 @@ describe("GET /api/shop", () => {
     expect(res.statusCode).toBe(200);
     const { skus } = res.json();
     const bySku = Object.fromEntries(skus.map((s: { sku: string }) => [s.sku, s]));
-    expect(bySku.pencil_5).toMatchObject({ starsAmount: 25, contents: { pencil: 5 } });
+    expect(bySku.pencil_5).toMatchObject({ starsAmount: 15, contents: { pencil: 5 } });
+    expect(bySku.eraser_5).toMatchObject({ starsAmount: 30, contents: { eraser: 5 } });
+    expect(bySku.rocket_3).toMatchObject({ starsAmount: 45, contents: { rocket: 3 } });
+    expect(bySku.bomb_3).toMatchObject({ starsAmount: 60, contents: { bomb: 3 } });
+    expect(bySku.fill_3).toMatchObject({ starsAmount: 90, contents: { fill: 3 } });
     expect(bySku.revive).toMatchObject({ starsAmount: 30, contents: {} });
-    // Bulk-stockable revive tiers (§19 round 5) — separate SKUs from the
-    // game-over-only "revive" above, each a genuine inventory grant.
-    expect(bySku.revive_1).toMatchObject({ starsAmount: 30, contents: { revive: 1 } });
-    expect(bySku.revive_3).toMatchObject({ starsAmount: 60, contents: { revive: 3 } });
-    expect(bySku.revive_5).toMatchObject({ starsAmount: 75, contents: { revive: 5 } });
-    expect(bySku.revive_20).toMatchObject({ starsAmount: 250, contents: { revive: 20 } });
+    // Bundles (§19 round 8) — five/ten of everything, revives included.
+    expect(bySku.toolbox).toMatchObject({
+      starsAmount: 249,
+      contents: { pencil: 5, eraser: 5, rocket: 5, bomb: 5, fill: 5, revive: 5 },
+    });
+    expect(bySku.toolcrate).toMatchObject({
+      starsAmount: 449,
+      contents: { pencil: 10, eraser: 10, rocket: 10, bomb: 10, fill: 10, revive: 10 },
+    });
+    // Bulk-stockable revive tiers — separate SKUs from the game-over-only
+    // "revive" above, each a genuine inventory grant.
+    expect(bySku.revive_3).toMatchObject({ starsAmount: 79, contents: { revive: 3 } });
+    expect(bySku.revive_10).toMatchObject({ starsAmount: 249, contents: { revive: 10 } });
+    expect(bySku.revive_25).toMatchObject({ starsAmount: 599, contents: { revive: 25 } });
+    // Withdrawn in round 8 — a re-seed must retire them, not leave them on sale.
+    for (const gone of ["fill_1", "revive_1", "revive_5", "revive_20"]) {
+      expect(bySku[gone], `${gone} should no longer be listed`).toBeUndefined();
+    }
     // §19 settings: purchasable cosmetic themes, seeded from packages/shared's
     // PREMIUM_THEMES — same generic SKU/inventory pipeline as the powerups above.
     expect(bySku.theme_sunset).toMatchObject({ starsAmount: 60, contents: { theme_sunset: 1 } });
     expect(bySku.theme_ocean).toMatchObject({ starsAmount: 60, contents: { theme_ocean: 1 } });
     expect(bySku.theme_neon).toMatchObject({ starsAmount: 60, contents: { theme_neon: 1 } });
     expect(bySku.theme_monochrome).toMatchObject({ starsAmount: 60, contents: { theme_monochrome: 1 } });
+  });
+
+  it("returns SKUs in the catalogue's own display order, not the database's", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/shop" });
+    const order: string[] = res.json().skus.map((s: { sku: string }) => s.sku);
+    // Bundles lead, then singles cheapest-first, then revive tiers, then themes.
+    const expectedHead = [
+      "toolbox",
+      "toolcrate",
+      "pencil_5",
+      "eraser_5",
+      "rocket_3",
+      "bomb_3",
+      "fill_3",
+      "revive_3",
+      "revive_10",
+      "revive_25",
+    ];
+    expect(order.slice(0, expectedHead.length)).toEqual(expectedHead);
+    expect(order.filter((s) => s.startsWith("theme_"))).toEqual([
+      "theme_sunset",
+      "theme_ocean",
+      "theme_neon",
+      "theme_monochrome",
+    ]);
   });
 });
 
@@ -77,7 +118,7 @@ describe("POST /api/shop/invoice", () => {
     expect(body.invoiceLink).toBe("https://t.me/$mock-invoice-link");
     expect(body.purchaseId).toMatch(/^[0-9a-f-]{36}$/);
     expect(createInvoiceLink).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "5 Pencils", starsAmount: 25 }),
+      expect.objectContaining({ title: "5 Pencils", starsAmount: 15 }),
     );
   });
 

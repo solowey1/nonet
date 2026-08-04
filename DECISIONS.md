@@ -1951,3 +1951,108 @@ false failure — editing that file mid-session makes Vite hand the running
 app an HMR-versioned (`?t=`) copy, so a plain dynamic import resolves to a
 *different* module instance with default state. Checking persistence through
 an actual page reload tests the real thing and can't be fooled that way.
+
+## Round 8: HUD layout per orientation, shop re-pricing, and two real bugs
+
+### The selected leaderboard tab was never styled
+
+`TabsTrigger` styled the active tab with `data-[selected]:…`, but Base UI's
+Tab emits **`data-active`** (confirmed in the package's own
+`TabsTabDataAttributes`) plus the ARIA-mandated `aria-selected`. Nothing ever
+matched `data-selected`, so both tabs rendered identically and there was no
+way to tell which panel you were on. Restyled on `aria-selected` — the one
+the ARIA tabs pattern guarantees regardless of library — with `data-[active]`
+alongside it. This applied to the shared primitive *and* to
+`LeaderboardScreen`'s own per-trigger overrides, which had copied the same
+wrong attribute. The scope chips were fine all along: they're plain buttons
+with a hand-rolled `active` check, which is why only the tabs looked dead.
+Renamed the week/all-time chips to fit one line instead of wrapping to two.
+
+### Shop ordering was never actually defined
+
+`GET /api/shop` selected with no `ORDER BY`, so the catalogue rendered in
+whatever order Postgres happened to return rows — stable in practice, but
+not guaranteed, and impossible to *choose*. Added a `sortOrder` column
+written from the seed array's own index, so the display order lives in the
+same edit-without-a-deploy table as the prices (§8) and the array literal in
+`seedShop.ts` reads top-to-bottom exactly as the shop does.
+
+A second, worse gap in the same file: `seedShopSkus` only ever upserted, so a
+SKU *removed* from the catalogue stayed on sale forever. Retiring `fill_1`
+and the old `revive_1/5/20` tiers this round would have left them purchasable
+indefinitely. Added a sweep that deactivates anything not in the current
+list — deactivating rather than deleting, so historical `purchases` rows keep
+pointing at something real — plus `active: true` on the upsert path so a
+withdrawn SKU that later returns comes back rather than staying invisible.
+
+New pricing: bundles lead (Toolbox 249 = five of everything including
+revives; Tool Crate 449 = ten of everything), then singles cheapest-first
+(15/30/45/60/90), then revive tiers (3/10/25 at 79/249/599). A single revive
+is no longer sold in the shop at all — buying one at a time stays the
+game-over screen's own impulse purchase at 30.
+
+Bundle contents needed an explicit display order: `contents` is a `jsonb`
+column, and **jsonb does not preserve key insertion order**, so
+`Object.entries` was listing a toolbox in whatever order Postgres stored the
+keys. `CONTENTS_ORDER` now sorts them pencil → eraser → rocket → bomb → fill
+→ revive regardless of storage order.
+
+### Combo moved out of the score HUD
+
+The combo readout lived inside `ScoreHud`, right of Score/Best. In landscape
+that rail is ~190px wide, so "РЕКОРД" and "комбо" collided into
+"РЕКОРДкомбо". It now sits with the pure-game badge in a strip directly above
+the power-ups, which is where both labels are actually relevant.
+
+One DOM order serves both orientations: `[PureGame, Combo]` inside a flex
+container that is `row` + `space-between` in portrait (pure left, combo
+opposite on the right) and `column-reverse` in landscape (combo on top, pure
+below, both above the power-up grid). No duplicated subtree, no
+orientation-conditional JSX. When a power-up has been used the badge is
+replaced by an empty `<span/>` rather than removed, so `space-between` keeps
+the combo pinned right instead of letting it slide left.
+
+### Landscape: two columns, anchored to the bottom
+
+Six items in a single column were taller than the left rail. The power-up
+container becomes a 2-column grid in landscape (`landscape:grid
+landscape:grid-cols-2`), and `.inventoryArea` gets `justify-content:
+flex-end` so the whole block — labels included — hugs the bottom of a cell
+that spans two grid rows. The board's cell size drops to `8.4vh` in landscape
+only (9 x 9.5vh plus padding was essentially the full viewport height, which
+is why it ran into the bottom edge), and the piece tray moved from
+`align-items: flex-end` to centred-with-bottom-padding so the pieces sit
+back within reach of the controls instead of pinned to the floor.
+
+Portrait keeps its single centred row, and gained a proportional lift
+(`7vh` bottom padding on the board wrapper, `3vh` bottom margin on the tray)
+to close the dead band that had opened between the power-ups and the board.
+
+### Main menu parity with the tray
+
+The menu's item row was missing revive entirely, and its tiles were inert
+`div`s. They're now buttons over the same six-item list the in-game tray
+uses, opening the same description sheet — extracted to
+`PowerupInfoSheet.tsx` so both callers share it. The menu opens it on a
+plain **tap**: unlike the tray, nothing on that screen competes for the
+gesture, so requiring a long-press there would be friction for no reason.
+
+### Verified with headless Chromium in both orientations, by measurement and by eye
+
+15 checks plus screenshots reviewed directly. Portrait: pure game and combo
+share one row above the power-ups, pure on the left and combo opposite;
+board lifted above the vertical midpoint; pieces clear of the bottom edge.
+Landscape: power-ups resolve to exactly two distinct columns over three rows,
+anchored within 5px of the bottom; combo above pure game above the grid;
+score still top-left; board and pieces both clear of the bottom. Menu: revive
+tile present, tapping an item opens its sheet. Leaderboard: the selected tab
+now differs in colour from the unselected one and carries the accent
+underline. All 15 passed, alongside 118 engine tests and 71 API tests
+(including new coverage that the catalogue comes back in its defined order
+and that withdrawn SKUs are actually retired), `tsc --noEmit` across every
+package, and a full workspace `vite build`.
+
+A measurement note: the first run reported the landscape pieces as still too
+low. That was the *check* being wrong — in landscape `.tray` is
+`height: 100%` of the rail, so its bounding box describes the rail, not the
+pieces. Measuring the piece hit-areas instead gave the real answer.

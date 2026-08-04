@@ -28,13 +28,18 @@
   position: relative;
   display: flex;
   justify-content: center;
-  padding: 8px 12px;
+  /* Extra bottom padding biases the centred board upward, and the tray's own
+     bottom margin lifts the pieces with it — portrait had a visible dead band
+     between the power-ups and the board, and another under the tray (§19
+     round 8). Both are proportional so the effect scales with screen size. */
+  padding: 8px 12px 7vh;
   flex: 1;
   align-items: center;
 }
 
 .trayWrap {
   flex-shrink: 0;
+  margin-bottom: 3vh;
 }
 
 .scoreArea {
@@ -54,6 +59,32 @@
 
 .inventoryArea {
   min-width: 0;
+}
+
+/*
+ * The strip above the power-ups: "Pure game" and the combo readout.
+ * Portrait -> one row, pure left / combo right (hence space-between, and the
+ * empty <span/> placeholder the JSX renders once a power-up has been used, so
+ * the combo stays pinned right instead of sliding left).
+ */
+.playMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 16px 2px;
+  min-height: 1.6em;
+}
+
+.combo {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--nonet-accent);
+}
+
+/* One non-clearing placement left before the combo actually dies (§6 round 5) — a red warning, not the usual accent color. */
+.combo[data-grace="true"] {
+  color: var(--nonet-danger);
 }
 
 /*
@@ -102,12 +133,26 @@
     justify-content: flex-end;
   }
 
+  /* Power-ups anchor to the BOTTOM of the left rail, with the two labels
+     stacked directly above them (§19 round 8). `justify-content: flex-end`
+     is what does the anchoring — the rail spans rows 2-3, so without it the
+     block floated at the top of a very tall cell. */
   .inventoryArea {
     grid-area: inventory;
     display: flex;
     flex-direction: column;
+    justify-content: flex-end;
     align-items: flex-start;
-    padding: 4px 4px 4px 12px;
+    padding: 4px 4px calc(8px + var(--nonet-safe-bottom)) 12px;
+  }
+
+  /* Combo on top, pure game below it, both left-aligned above the grid. */
+  .playMeta {
+    flex-direction: column-reverse;
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding: 0 0 6px;
+    gap: 4px;
   }
 
   .hint {
@@ -121,10 +166,15 @@
     padding: 8px 4px;
   }
 
+  /* Pieces were pinned to the very bottom of the right rail, leaving a long
+     empty run below the controls. Centring them in the rail (biased upward by
+     the bottom padding) brings them back within reach of the buttons. */
   .trayWrap {
     grid-area: tray;
     display: flex;
-    align-items: flex-end;
+    align-items: center;
+    margin-bottom: 0; /* the portrait lift doesn't apply here — this rail has its own padding */
+    padding-bottom: calc(10vh + var(--nonet-safe-bottom));
   }
 }
 

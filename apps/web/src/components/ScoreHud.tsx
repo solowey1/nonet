@@ -3,12 +3,16 @@ import styles from "./ScoreHud.module.css";
 
 interface ScoreHudProps {
   readonly score: number;
-  readonly comboLevel: number;
-  readonly comboGraceActive: boolean;
   readonly bestScore: number | null;
 }
 
-export function ScoreHud({ score, comboLevel, comboGraceActive, bestScore }: ScoreHudProps) {
+/**
+ * Score and best only. The combo readout used to live here too, but it now
+ * sits above the power-up row in both orientations (§19 round 8) — in
+ * landscape especially, cramming it next to Score/Best in a narrow rail made
+ * the two labels collide.
+ */
+export function ScoreHud({ score, bestScore }: ScoreHudProps) {
   const { t } = useTranslation();
   return (
     <div className={styles.hud}>
@@ -23,9 +27,6 @@ export function ScoreHud({ score, comboLevel, comboGraceActive, bestScore }: Sco
             <span className={styles.bestScore}>{bestScore.toLocaleString()}</span>
           </div>
         )}
-      </div>
-      <div className={styles.combo} data-grace={comboLevel > 1 && comboGraceActive}>
-        {comboLevel > 1 ? t("scoreHud.combo", { level: comboLevel }) : ""}
       </div>
     </div>
   );

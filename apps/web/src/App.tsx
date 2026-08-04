@@ -194,8 +194,6 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
         <div className={styles.scoreArea}>
           <ScoreHud
             score={game.score}
-            comboLevel={game.comboLevel}
-            comboGraceActive={game.comboGraceActive}
             bestScore={
               profile?.bestRun ? Math.max(profile.bestRun.score, game.score) : game.score > 0 ? game.score : null
             }
@@ -216,12 +214,26 @@ function Game({ boardRef }: { boardRef: React.RefObject<HTMLDivElement | null> }
       </div>
 
       <div className={styles.inventoryArea}>
-        {/* Disappears the instant a powerup is used (§19 round 5) — game.powerupsUsed is already live engine state. */}
-        {game.powerupsUsed === 0 && (
-          <Badge variant="secondary" className="mx-auto mb-1 w-fit landscape:mx-0">
-            <Sparkles className="h-3 w-3" aria-hidden="true" /> {t("game.pureRun")}
-          </Badge>
-        )}
+        {/*
+          Pure-game and combo share the strip directly above the power-ups
+          (§19 round 8). Portrait lays them out as one row — pure on the left,
+          combo opposite on the right. Landscape flips to `column-reverse`,
+          which puts combo on top and pure beneath it, right above the 2-column
+          power-up grid. One DOM order, two readings, no duplicated subtree.
+        */}
+        <div className={styles.playMeta}>
+          {/* Disappears the instant a powerup is used — game.powerupsUsed is already live engine state. */}
+          {game.powerupsUsed === 0 ? (
+            <Badge variant="secondary" className="w-fit">
+              <Sparkles className="h-3 w-3" aria-hidden="true" /> {t("game.pureRun")}
+            </Badge>
+          ) : (
+            <span />
+          )}
+          <div className={styles.combo} data-grace={game.comboLevel > 1 && game.comboGraceActive}>
+            {game.comboLevel > 1 ? t("scoreHud.combo", { level: game.comboLevel }) : ""}
+          </div>
+        </div>
         <InventoryBar inventory={inventory} armed={armedPowerup} onArm={armPowerup} />
       </div>
 
