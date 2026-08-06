@@ -87,26 +87,39 @@ export function scorePowerupClear(input: {
 
 export interface ComboState {
   readonly comboLevel: number;
+  /** Consecutive *clearing* placements. Distinct from comboLevel, which counts units and so can jump by 2+ on a single placement. */
+  readonly comboChain: number;
   readonly comboGraceActive: boolean;
 }
 
+/** A combo is only "established" — and so only worth protecting — once two clearing placements have landed back to back (§6 round 9). */
+const CHAIN_TO_ESTABLISH = 2;
+
 /**
- * Next combo state given how many units this placement cleared (§6 round 5).
+ * Next combo state given how many units this placement cleared.
+ *
  * A clearing placement bumps the level by the *number* of units cleared at
- * once — clearing 2 lines (or a line + a 3x3 block) simultaneously is a
- * harder move than clearing 1, so it's worth more combo, not the same flat
- * +1. A non-clearing placement doesn't reset the combo immediately: it gets
- * one grace placement first (`comboGraceActive` flips on — the UI reads this
- * as "about to expire") before a *second* consecutive non-clearing placement
- * actually zeroes it. Without the grace step, holding a combo across more
- * than one placement at a time is nearly impossible.
+ * once (§6 round 5) — clearing 2 lines simultaneously is a harder move than
+ * clearing 1, so it's worth more combo, not the same flat +1 — and extends
+ * the chain by exactly one.
+ *
+ * A non-clearing placement resets everything, *unless* the chain has reached
+ * two consecutive clears, in which case it burns one grace placement first
+ * (`comboGraceActive`, which the UI shows as a red "about to expire"
+ * warning). Gating the grace on the chain is the round-9 correction: a single
+ * lucky clear shouldn't buy a free miss, only a genuine streak should.
  */
 export function nextCombo(current: ComboState, unitsCleared: number): ComboState {
   if (unitsCleared > 0) {
-    return { comboLevel: current.comboLevel + unitsCleared, comboGraceActive: false };
+    return {
+      comboLevel: current.comboLevel + unitsCleared,
+      comboChain: current.comboChain + 1,
+      comboGraceActive: false,
+    };
   }
-  if (current.comboLevel === 0 || current.comboGraceActive) {
-    return { comboLevel: 0, comboGraceActive: false };
+  const established = current.comboChain >= CHAIN_TO_ESTABLISH;
+  if (!established || current.comboGraceActive) {
+    return { comboLevel: 0, comboChain: 0, comboGraceActive: false };
   }
-  return { comboLevel: current.comboLevel, comboGraceActive: true };
+  return { comboLevel: current.comboLevel, comboChain: current.comboChain, comboGraceActive: true };
 }

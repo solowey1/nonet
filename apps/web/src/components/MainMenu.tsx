@@ -25,6 +25,7 @@ export function MainMenu() {
   const goToShop = useGameStore((s) => s.goToShop);
   const goToSettings = useGameStore((s) => s.goToSettings);
   const goToAchievements = useGameStore((s) => s.goToAchievements);
+  const actionError = useGameStore((s) => s.actionError);
 
   const hasActiveRun = runId !== null;
   // Game-over is already the end of the run — nothing left to lose there, so
@@ -183,6 +184,9 @@ export function MainMenu() {
           {t("mainMenu.settings")}
         </Button>
       </nav>
+
+      {/* A failed "New game" used to be completely silent (§19 round 9). */}
+      {actionError && <p className="mt-1 max-w-[320px] text-center text-sm text-destructive">{t(actionError)}</p>}
 
       <Dialog open={confirmNewGame} onOpenChange={setConfirmNewGame}>
         <DialogContent>

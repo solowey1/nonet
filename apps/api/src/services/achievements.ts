@@ -99,14 +99,19 @@ async function getLifetimePieces(db: Executor, userId: bigint): Promise<number> 
   return row?.total ?? 0;
 }
 
-async function ownsAllThemes(db: Executor, userId: bigint): Promise<boolean> {
+/**
+ * How many premium themes the player owns *however they got them* — this reads
+ * `inventory_balance`, which is where a purchase and an achievement reward both
+ * land (see `grantReward` above, and `first_5000`'s Monochrome unlock), so a
+ * theme won for free counts exactly like a bought one (§19 round 9).
+ */
+async function ownedThemeCount(db: Executor, userId: bigint): Promise<number> {
   const keys = PREMIUM_THEMES.map((t) => themeInventoryKey(t.id));
   const rows = await db
     .select({ item: inventoryBalance.item, qty: inventoryBalance.qty })
     .from(inventoryBalance)
     .where(and(eq(inventoryBalance.userId, userId), inArray(inventoryBalance.item, keys)));
-  const owned = new Set(rows.filter((r) => r.qty > 0).map((r) => r.item));
-  return keys.every((k) => owned.has(k));
+  return rows.filter((r) => r.qty > 0).length;
 }
 
 const DAILY_STREAK_LOOKBACK_CAP = 60;
@@ -151,6 +156,11 @@ interface RunAggregates {
   readonly bestUnitsCleared: number;
   readonly bestPerfectClears: number;
   readonly bestPureScore: number;
+  readonly bestPieces: number;
+  readonly bestNoReviveScore: number;
+  readonly bestPowerupsUsed: number;
+  readonly lifetimeScore: number;
+  readonly runCount: number;
 }
 
 /**
@@ -169,6 +179,11 @@ async function getRunAggregates(db: Executor, userId: bigint): Promise<RunAggreg
       bestUnitsCleared: sql<number>`coalesce(max(${runs.unitsCleared}), 0)::int`,
       bestPerfectClears: sql<number>`coalesce(max(${runs.perfectClears}), 0)::int`,
       bestPureScore: sql<number>`coalesce(max(${runs.score}) filter (where not ${runs.usedPowerups}), 0)::int`,
+      bestPieces: sql<number>`coalesce(max(${runs.piecesPlaced}), 0)::int`,
+      bestNoReviveScore: sql<number>`coalesce(max(${runs.score}) filter (where not ${runs.revived}), 0)::int`,
+      bestPowerupsUsed: sql<number>`coalesce(max(${runs.powerupsUsed}), 0)::int`,
+      lifetimeScore: sql<number>`coalesce(sum(${runs.score}), 0)::bigint`,
+      runCount: sql<number>`count(*)::int`,
     })
     .from(runs)
     .where(and(eq(runs.userId, userId), eq(runs.verified, true)));
@@ -178,6 +193,13 @@ async function getRunAggregates(db: Executor, userId: bigint): Promise<RunAggreg
     bestUnitsCleared: row?.bestUnitsCleared ?? 0,
     bestPerfectClears: row?.bestPerfectClears ?? 0,
     bestPureScore: row?.bestPureScore ?? 0,
+    bestPieces: row?.bestPieces ?? 0,
+    bestNoReviveScore: row?.bestNoReviveScore ?? 0,
+    bestPowerupsUsed: row?.bestPowerupsUsed ?? 0,
+    // `sum()` over bigint comes back as a string from postgres.js — Number() it
+    // here so every consumer sees a plain number like the other aggregates.
+    lifetimeScore: Number(row?.lifetimeScore ?? 0),
+    runCount: row?.runCount ?? 0,
   };
 }
 
@@ -198,10 +220,20 @@ async function checkCondition(
       return agg.bestPerfectClears >= condition.threshold;
     case "run_pure_score":
       return agg.bestPureScore >= condition.threshold;
+    case "run_pieces":
+      return agg.bestPieces >= condition.threshold;
+    case "run_no_revive_score":
+      return agg.bestNoReviveScore >= condition.threshold;
+    case "run_powerups_used":
+      return agg.bestPowerupsUsed >= condition.threshold;
     case "lifetime_pieces":
       return (await getLifetimePieces(db, userId)) >= condition.threshold;
-    case "own_all_themes":
-      return ownsAllThemes(db, userId);
+    case "lifetime_score":
+      return agg.lifetimeScore >= condition.threshold;
+    case "lifetime_runs":
+      return agg.runCount >= condition.threshold;
+    case "own_themes":
+      return (await ownedThemeCount(db, userId)) >= condition.threshold;
     case "daily_score_streak":
       return hasConsecutiveDailyScore(db, userId, condition.threshold, condition.days);
     case "weekly_total_score":
@@ -300,6 +332,7 @@ export async function evaluateLoginAchievements(db: Executor, userId: bigint, lo
 export interface AchievementSnapshotEntry {
   readonly id: string;
   readonly repeatable: boolean;
+  readonly secret: boolean;
   readonly unlocked: boolean;
   readonly timesCompleted: number;
   readonly lastCompletedAt: string | null;
@@ -315,12 +348,7 @@ export async function getAchievementsSnapshot(db: Executor, userId: bigint): Pro
   const loginStreak = todayRow?.streak ?? 0;
 
   const lifetimePieces = await getLifetimePieces(db, userId);
-  const ownedThemeCount = (
-    await db
-      .select({ item: inventoryBalance.item, qty: inventoryBalance.qty })
-      .from(inventoryBalance)
-      .where(and(eq(inventoryBalance.userId, userId), inArray(inventoryBalance.item, PREMIUM_THEMES.map((t) => themeInventoryKey(t.id)))))
-  ).filter((r) => r.qty > 0).length;
+  const ownedThemes = await ownedThemeCount(db, userId);
 
   const entries: AchievementSnapshotEntry[] = [];
   for (const def of ACHIEVEMENTS) {
@@ -348,13 +376,33 @@ export async function getAchievementsSnapshot(db: Executor, userId: bigint): Pro
         current = runAgg.bestPureScore;
         target = def.condition.threshold;
         break;
+      case "run_pieces":
+        current = runAgg.bestPieces;
+        target = def.condition.threshold;
+        break;
+      case "run_no_revive_score":
+        current = runAgg.bestNoReviveScore;
+        target = def.condition.threshold;
+        break;
+      case "run_powerups_used":
+        current = runAgg.bestPowerupsUsed;
+        target = def.condition.threshold;
+        break;
       case "lifetime_pieces":
         current = lifetimePieces;
         target = def.condition.threshold;
         break;
-      case "own_all_themes":
-        current = ownedThemeCount;
-        target = PREMIUM_THEMES.length;
+      case "lifetime_score":
+        current = runAgg.lifetimeScore;
+        target = def.condition.threshold;
+        break;
+      case "lifetime_runs":
+        current = runAgg.runCount;
+        target = def.condition.threshold;
+        break;
+      case "own_themes":
+        current = ownedThemes;
+        target = def.condition.threshold;
         break;
       case "login_streak":
         current = loginStreak;
@@ -376,6 +424,7 @@ export async function getAchievementsSnapshot(db: Executor, userId: bigint): Pro
     entries.push({
       id: def.id,
       repeatable: def.repeatable,
+      secret: def.secret === true,
       unlocked: state.timesCompleted > 0,
       timesCompleted: state.timesCompleted,
       lastCompletedAt: state.lastCompletedAt ? state.lastCompletedAt.toISOString() : null,

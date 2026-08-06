@@ -21,12 +21,24 @@ export interface ThemePalette {
   readonly danger: string;
 }
 
+/**
+ * A theme's non-colour traits (§19 round 9). Most themes are a pure palette
+ * swap; a premium one can also re-voice the sound engine and switch on extra
+ * visual treatment. Both are plain enums rather than free-form config so the
+ * web app can exhaustively switch on them — a theme cannot smuggle in
+ * arbitrary behaviour.
+ */
+export type ThemeSoundProfile = "default" | "retro";
+export type ThemeEffects = "none" | "neonGlow";
+
 export interface PremiumThemeDef {
   readonly id: string;
   readonly title: string;
   readonly description: string;
   readonly starsAmount: number;
   readonly palette: ThemePalette;
+  readonly soundProfile?: ThemeSoundProfile;
+  readonly effects?: ThemeEffects;
 }
 
 /** The shop SKU and the inventory item granting ownership are both this exact string — a one-time unlock, not a consumable, so there's no need for them to differ. */
@@ -101,6 +113,29 @@ export const PREMIUM_THEMES: readonly PremiumThemeDef[] = [
       text: "#f5f5f5",
       textDim: "#8f8f8f",
       danger: "#c7c7c7",
+    },
+  },
+  {
+    // The one theme that is more than a repaint (§19 round 9): a synthwave
+    // palette, a neon glow treatment on the board, and its own sound voice —
+    // hence twice the price of the palette-only themes, and last in the list
+    // so the shop's theme row still reads cheapest-first.
+    id: "retrowave",
+    title: "Retrowave",
+    description: "Neon synthwave — glowing grid and its own retro sound set",
+    starsAmount: 120,
+    soundProfile: "retro",
+    effects: "neonGlow",
+    palette: {
+      bg: "#190b2e",
+      board: "#241040",
+      cellEmpty: "#331a57",
+      cellFilled: "#ff2e97",
+      blockDivider: "#7b2ff7",
+      accent: "#00f0ff",
+      text: "#ffe9ff",
+      textDim: "#b489da",
+      danger: "#ff5f6d",
     },
   },
 ] as const;

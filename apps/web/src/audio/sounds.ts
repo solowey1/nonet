@@ -19,7 +19,8 @@
  * ever needed.
  */
 
-import { isSoundEnabled } from "../telegram/webapp.js";
+import type { ThemeSoundProfile } from "@nonet/shared";
+import { getThemeSoundProfile, isSoundEnabled } from "../telegram/webapp.js";
 
 export type SoundName =
   | "grab"
@@ -102,6 +103,7 @@ function tone(o: ToneOptions): void {
   const gain = c.createGain();
 
   osc.type = o.type;
+  osc.detune.setValueAtTime(voice().detune, t0);
   osc.frequency.setValueAtTime(o.freq, t0);
   if (o.toFreq !== undefined) {
     // Exponential ramps can't touch 0 — clamp rather than silently throwing.
@@ -164,6 +166,33 @@ function noise(o: NoiseOptions): void {
 
 /** Major pentatonic, in semitones — no interval in it can clash, so an arpeggio of any length stays consonant. */
 const PENTATONIC = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24, 26];
+/** Minor pentatonic: the retro voice's darker scale, which is what makes synthwave sound like synthwave. */
+const MINOR_PENTATONIC = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24, 27];
+
+/**
+ * A theme can re-voice the whole synth (§19 round 9). Rather than duplicating
+ * every sound per theme, each voice is a small set of substitutions the
+ * existing sound bodies read: which waveform stands in for the "body" of a
+ * tone, which scale arpeggios walk, and a global detune. Retrowave's square
+ * body and minor scale are the entire difference between the two voices.
+ */
+interface Voice {
+  readonly body: OscillatorType;
+  readonly lead: OscillatorType;
+  readonly scale: readonly number[];
+  readonly detune: number;
+}
+
+const VOICES: Record<ThemeSoundProfile, Voice> = {
+  default: { body: "triangle", lead: "sine", scale: PENTATONIC, detune: 0 },
+  // Square + sawtooth is the classic chiptune/synthwave timbre; the slight
+  // flat detune keeps it from sounding like a clean modern synth.
+  retro: { body: "square", lead: "sawtooth", scale: MINOR_PENTATONIC, detune: -8 },
+};
+
+function voice(): Voice {
+  return VOICES[getThemeSoundProfile()] ?? VOICES.default;
+}
 
 function semitone(base: number, steps: number): number {
   return base * Math.pow(2, steps / 12);
@@ -177,12 +206,13 @@ function semitone(base: number, steps: number): number {
  * scale too).
  */
 function playClear(unitsCleared: number, comboLevel: number): void {
+  const v = voice();
   const notes = Math.min(2 + Math.max(unitsCleared, 1), 7);
   const base = semitone(392, Math.min(Math.max(comboLevel - 1, 0), 7)); // G4, shifted up by combo
   for (let i = 0; i < notes; i++) {
     tone({
-      type: "triangle",
-      freq: semitone(base, PENTATONIC[i] ?? 0),
+      type: v.body,
+      freq: semitone(base, v.scale[i] ?? 0),
       at: i * 0.052,
       dur: 0.19,
       peak: 0.5,
@@ -191,13 +221,14 @@ function playClear(unitsCleared: number, comboLevel: number): void {
 }
 
 function playPerfectClear(): void {
+  const v = voice();
   // Same shape as a normal clear but longer, brighter, and with an octave
   // shimmer on top — the audio counterpart of the "success" haptic that
   // already fires only here.
   for (let i = 0; i < 8; i++) {
-    const freq = semitone(523.25, PENTATONIC[i] ?? 0); // C5
-    tone({ type: "triangle", freq, at: i * 0.045, dur: 0.26, peak: 0.5 });
-    tone({ type: "sine", freq: freq * 2, at: i * 0.045, dur: 0.3, peak: 0.16 });
+    const freq = semitone(523.25, v.scale[i] ?? 0); // C5
+    tone({ type: v.body, freq, at: i * 0.045, dur: 0.26, peak: 0.5 });
+    tone({ type: v.lead, freq: freq * 2, at: i * 0.045, dur: 0.3, peak: 0.16 });
   }
 }
 
@@ -206,13 +237,13 @@ function playSoundInternal(name: SoundName, intensity: number, comboLevel: numbe
     // A "pinch": short, bright, rising — reads as picking something up
     // rather than putting it down (which `place` deliberately inverts).
     case "grab":
-      tone({ type: "triangle", freq: 520, toFreq: 790, at: 0, dur: 0.075, peak: 0.5 });
+      tone({ type: voice().body, freq: 520, toFreq: 790, at: 0, dur: 0.075, peak: 0.5 });
       break;
 
     // A soft thunk: a pitch drop for the weight, plus a tiny filtered-noise
     // transient for the contact "tap".
     case "place":
-      tone({ type: "triangle", freq: 240, toFreq: 130, at: 0, dur: 0.11, peak: 0.62 });
+      tone({ type: voice().body, freq: 240, toFreq: 130, at: 0, dur: 0.11, peak: 0.62 });
       noise({ at: 0, dur: 0.045, peak: 0.22, filter: "lowpass", freq: 2200 });
       break;
 
@@ -226,17 +257,17 @@ function playSoundInternal(name: SoundName, intensity: number, comboLevel: numbe
 
     // Descending minor-ish fall — the one unambiguously "down" sound here.
     case "gameOver":
-      tone({ type: "triangle", freq: 392, at: 0, dur: 0.22, peak: 0.5 });
-      tone({ type: "triangle", freq: 311, at: 0.15, dur: 0.24, peak: 0.5 });
-      tone({ type: "triangle", freq: 233, at: 0.32, dur: 0.5, peak: 0.55 });
+      tone({ type: voice().body, freq: 392, at: 0, dur: 0.22, peak: 0.5 });
+      tone({ type: voice().body, freq: 311, at: 0.15, dur: 0.24, peak: 0.5 });
+      tone({ type: voice().body, freq: 233, at: 0.32, dur: 0.5, peak: 0.55 });
       break;
 
     // Warm rising triad: the reward for spending a revive.
     case "revive":
-      tone({ type: "triangle", freq: 261.63, at: 0, dur: 0.3, peak: 0.45 });
-      tone({ type: "triangle", freq: 329.63, at: 0.09, dur: 0.3, peak: 0.45 });
-      tone({ type: "triangle", freq: 392, at: 0.18, dur: 0.42, peak: 0.5 });
-      tone({ type: "sine", freq: 523.25, at: 0.27, dur: 0.5, peak: 0.3 });
+      tone({ type: voice().body, freq: 261.63, at: 0, dur: 0.3, peak: 0.45 });
+      tone({ type: voice().body, freq: 329.63, at: 0.09, dur: 0.3, peak: 0.45 });
+      tone({ type: voice().body, freq: 392, at: 0.18, dur: 0.42, peak: 0.5 });
+      tone({ type: voice().lead, freq: 523.25, at: 0.27, dur: 0.5, peak: 0.3 });
       break;
 
     // --- Power-ups: each gets a distinct timbre, not just a distinct pitch,
@@ -268,8 +299,8 @@ function playSoundInternal(name: SoundName, intensity: number, comboLevel: numbe
     // Fill: a rising "pour" — continuous upward sweep, no transient, so it
     // reads as filling rather than striking.
     case "fill":
-      tone({ type: "triangle", freq: 200, toFreq: 880, at: 0, dur: 0.28, peak: 0.45 });
-      tone({ type: "sine", freq: 400, toFreq: 1760, at: 0.02, dur: 0.26, peak: 0.2 });
+      tone({ type: voice().body, freq: 200, toFreq: 880, at: 0, dur: 0.28, peak: 0.45 });
+      tone({ type: voice().lead, freq: 400, toFreq: 1760, at: 0.02, dur: 0.26, peak: 0.2 });
       break;
   }
 }

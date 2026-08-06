@@ -95,6 +95,9 @@ describe("GET /api/shop", () => {
       "theme_ocean",
       "theme_neon",
       "theme_monochrome",
+      // Retrowave is 120 stars (it ships sounds + effects, not just a palette),
+      // so it sits after the 60-star ones (§19 round 9).
+      "theme_retrowave",
     ]);
   });
 });

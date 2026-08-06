@@ -1,0 +1,1 @@
+ALTER TABLE "runs" ADD COLUMN "powerups_used" integer DEFAULT 0 NOT NULL;

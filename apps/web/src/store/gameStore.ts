@@ -108,6 +108,17 @@ interface GameStoreState {
   readonly revivePending: boolean;
   readonly profile: ProfileResponse | null;
   readonly achievements: readonly AchievementProgress[] | null;
+  /** In flight guard for newRun, so a double tap can't race two run-starts. */
+  readonly newRunPending: boolean;
+  /** i18n key for the last user-visible action failure (e.g. New game couldn't reach the server), or null. */
+  readonly actionError: string | null;
+  /**
+   * Achievements to announce in the bottom toast stack (§19 round 9). Kept
+   * separate from `finishResult.unlockedAchievements` — that one is a record
+   * of what the finished run earned and stays put, this one is transient UI
+   * that the player (or a timer) dismisses.
+   */
+  readonly achievementToasts: readonly string[];
 
   bootstrap(): Promise<void>;
   place(slot: 0 | 1 | 2, row: number, col: number): boolean;
@@ -122,6 +133,7 @@ interface GameStoreState {
   loadProfile(): Promise<void>;
   loadAchievements(): Promise<void>;
   newRun(): Promise<void>;
+  dismissAchievementToasts(): void;
   continueRun(): void;
   goToMenu(): void;
   goToLeaderboard(): void;
@@ -163,6 +175,41 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     });
   }
 
+  /** Mints a fresh session from initData (or the dev fallback). Returns null when neither is possible. */
+  async function mintSession() {
+    const initData = getTelegramInitData();
+    if (initData) return postSession(initData);
+    if (import.meta.env.DEV) return postDevSession(getOrCreateDevUserId(), "dev");
+    return null;
+  }
+
+  /**
+   * Runs `fn` with the current session token, re-minting the session once if
+   * the server rejects it.
+   *
+   * A single run can easily outlive `SESSION_TOKEN_TTL_SECONDS` (an hour by
+   * default) while its *run* token is still good for six — so after a long
+   * game, "New game" was calling `/api/run/start` with a dead session token,
+   * getting a 401, and rejecting into nothing: the button appeared to do
+   * absolutely nothing (§19 round 9). Nothing here is speculative retrying —
+   * only an explicit 401 triggers the re-auth, and only once.
+   */
+  async function withSession<T>(fn: (token: string) => Promise<T>): Promise<T> {
+    const current = get().sessionToken;
+    if (current) {
+      try {
+        return await fn(current);
+      } catch (err) {
+        if (!(err instanceof ApiError) || err.status !== 401) throw err;
+      }
+    }
+    const session = await mintSession();
+    if (!session) throw new Error("session expired and no Telegram initData is available to renew it");
+    set({ sessionToken: session.token, inventory: session.inventory });
+    setShareTargetUrl(session.miniAppUrl);
+    return fn(session.token);
+  }
+
   /** Ignores the periodic threshold — used wherever progress must be saved *now* (e.g. leaving the game screen via Back). */
   async function forceCheckpoint() {
     const { runId, runToken, actionLog, checkpointedCount } = get();
@@ -201,6 +248,9 @@ export const useGameStore = create<GameStoreState>((set, get) => {
           rank: result.rank,
           unlockedAchievements: result.unlockedAchievements,
         },
+        // §19 round 9: announced in the bottom toast stack rather than listed
+        // inline on the game-over card, which a good run could fill entirely.
+        achievementToasts: result.unlockedAchievements,
       });
       if (result.verified) void get().loadProfile(); // best score may have just changed
       // Achievement rewards (and any milestone drops) are granted server-side
@@ -324,6 +374,9 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     revivePending: false,
     profile: null,
     achievements: null,
+    newRunPending: false,
+    actionError: null,
+    achievementToasts: [],
 
     async bootstrap() {
       await bootstrapTelegramWebApp();
@@ -514,7 +567,7 @@ export const useGameStore = create<GameStoreState>((set, get) => {
         } else {
           let invoiceLink: string;
           try {
-            const invoice = await postShopInvoice(sessionToken, "revive", runId);
+            const invoice = await withSession((token) => postShopInvoice(token, "revive", runId));
             invoiceLink = invoice.invoiceLink;
             consumeToken = invoice.purchaseId;
           } catch (err) {
@@ -562,15 +615,9 @@ export const useGameStore = create<GameStoreState>((set, get) => {
       // No standalone "GET my inventory" endpoint — /api/session already
       // returns the current balance and is safe to re-call mid-session (the
       // daily gift it may grant is idempotent per calendar day server-side).
-      const { sessionToken } = get();
-      if (!sessionToken) return;
+      if (!get().sessionToken) return;
       try {
-        const initData = getTelegramInitData();
-        const session = initData
-          ? await postSession(initData)
-          : import.meta.env.DEV
-            ? await postDevSession(getOrCreateDevUserId(), "dev")
-            : null;
+        const session = await mintSession();
         if (session) set({ sessionToken: session.token, inventory: session.inventory });
       } catch (err) {
         console.error("failed to refresh inventory", err);
@@ -578,21 +625,18 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     },
 
     async loadProfile() {
-      const { sessionToken } = get();
-      if (!sessionToken) return;
+      if (!get().sessionToken) return;
       try {
-        const profile = await getProfile(sessionToken);
-        set({ profile });
+        set({ profile: await withSession((token) => getProfile(token)) });
       } catch (err) {
         console.error("failed to load profile", err); // best score just doesn't show — not fatal
       }
     },
 
     async loadAchievements() {
-      const { sessionToken } = get();
-      if (!sessionToken) return;
+      if (!get().sessionToken) return;
       try {
-        const { achievements } = await getAchievements(sessionToken);
+        const { achievements } = await withSession((token) => getAchievements(token));
         set({ achievements });
       } catch (err) {
         console.error("failed to load achievements", err);
@@ -600,14 +644,27 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     },
 
     async newRun() {
-      const { sessionToken, game } = get();
-      if (!sessionToken) return;
+      if (get().newRunPending) return;
       // Fire-and-forget, same as the old auto-finish: the player chose to
       // move on without reviving, so the run is really over now.
-      if (game.status === "gameover") void finishRun();
-      await startFreshRun(sessionToken);
-      setClosingConfirmation(true);
-      set({ screen: "game" });
+      if (get().game.status === "gameover") void finishRun();
+      set({ newRunPending: true, actionError: null });
+      try {
+        await withSession((token) => startFreshRun(token));
+        setClosingConfirmation(true);
+        set({ screen: "game" });
+      } catch (err) {
+        // Never fail silently again: a dead button with no explanation is
+        // exactly the bug this round fixed (§19 round 9).
+        console.error("failed to start a new run", err);
+        set({ actionError: "errors.newRunFailed" });
+      } finally {
+        set({ newRunPending: false });
+      }
+    },
+
+    dismissAchievementToasts() {
+      set({ achievementToasts: [] });
     },
 
     continueRun() {

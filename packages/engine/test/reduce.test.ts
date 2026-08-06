@@ -107,6 +107,7 @@ describe("reduce: game over", () => {
       rng: createInitialState(seed(6)).rng,
       score: 0,
       comboLevel: 0,
+      comboChain: 0,
       comboGraceActive: false,
       piecesPlaced: 0,
       unitsCleared: 0,
@@ -136,6 +137,7 @@ describe("reduce: game over", () => {
       rng: createInitialState(seed(9)).rng,
       score: 0,
       comboLevel: 0,
+      comboChain: 0,
       comboGraceActive: false,
       piecesPlaced: 0,
       unitsCleared: 0,
@@ -187,7 +189,7 @@ describe("reduce: powerups", () => {
   });
 });
 
-describe("reduce: combo (round 5 — multi-clear scaling and grace)", () => {
+describe("reduce: combo (multi-clear scaling, and a grace only an established streak earns)", () => {
   function twoClearableRows(): GameState["board"] {
     let board = EMPTY_BOARD;
     for (let c = 0; c < 9; c++) if (c !== 3 && c !== 4) board |= cellBit(0, c);
@@ -201,26 +203,52 @@ describe("reduce: combo (round 5 — multi-clear scaling and grace)", () => {
     const after = reduce(state, { t: 0, type: "place", slot: 0, r: 0, c: 3 });
     expect(after.unitsCleared).toBe(2);
     expect(after.comboLevel).toBe(2);
+    expect(after.comboChain).toBe(1);
     expect(after.comboGraceActive).toBe(false);
   });
 
-  it("a non-clearing placement enters grace, and a second one zeroes the combo", () => {
+  // Round 9: one clear is not a streak, so it buys no protection at all.
+  it("after only ONE clearing placement, a miss zeroes the combo outright — no grace", () => {
     const o2 = getPiece("O2");
     const dot = getPiece("DOT");
     let state: GameState = { ...createInitialState(seed(31)), board: twoClearableRows(), hand: [o2, dot, dot] };
 
     state = reduce(state, { t: 0, type: "place", slot: 0, r: 0, c: 3 });
-    expect(state.comboLevel).toBe(2);
+    expect(state.comboChain).toBe(1);
+
+    state = reduce(state, { t: 1, type: "place", slot: 1, r: 8, c: 8 });
+    expect(state.comboLevel).toBe(0);
+    expect(state.comboChain).toBe(0);
+    expect(state.comboGraceActive).toBe(false);
+  });
+
+  it("once two clears land back to back, a miss only burns the grace; the next one kills it", () => {
+    const o2 = getPiece("O2");
+    const dot = getPiece("DOT");
+    // comboChain: 1 stands in for an earlier clearing placement, so the O2
+    // below is the *second* consecutive clear and establishes the streak.
+    let state: GameState = {
+      ...createInitialState(seed(32)),
+      board: twoClearableRows(),
+      hand: [o2, dot, dot],
+      comboLevel: 1,
+      comboChain: 1,
+    };
+
+    state = reduce(state, { t: 0, type: "place", slot: 0, r: 0, c: 3 });
+    expect(state.comboChain).toBe(2);
+    expect(state.comboLevel).toBe(3); // 1 carried + 2 units cleared
     expect(state.comboGraceActive).toBe(false);
 
-    // Miss #1: clears nothing — combo survives on grace, not yet zeroed.
+    // Miss #1: the streak is established, so the combo survives on grace.
     state = reduce(state, { t: 1, type: "place", slot: 1, r: 8, c: 8 });
-    expect(state.comboLevel).toBe(2);
+    expect(state.comboLevel).toBe(3);
     expect(state.comboGraceActive).toBe(true);
 
     // Miss #2: the grace is spent — combo actually dies now.
     state = reduce(state, { t: 2, type: "place", slot: 2, r: 8, c: 7 });
     expect(state.comboLevel).toBe(0);
+    expect(state.comboChain).toBe(0);
     expect(state.comboGraceActive).toBe(false);
   });
 });
@@ -246,6 +274,7 @@ describe("reduce: revive", () => {
       rng: createInitialState(seed(21)).rng,
       score: 1234,
       comboLevel: 5,
+      comboChain: 3,
       comboGraceActive: true,
       piecesPlaced: 10,
       unitsCleared: 3,
@@ -260,6 +289,7 @@ describe("reduce: revive", () => {
     expect(revived.status).toBe("playing");
     expect(revived.board).toBe(EMPTY_BOARD);
     expect(revived.comboLevel).toBe(0);
+    expect(revived.comboChain).toBe(0);
     expect(revived.comboGraceActive).toBe(false);
     // Untouched: score/stats are the player's, and revive isn't a power-up.
     expect(revived.score).toBe(1234);

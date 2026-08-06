@@ -22,7 +22,14 @@ export type AchievementCondition =
   | { readonly kind: "run_perfect_clears"; readonly threshold: number }
   | { readonly kind: "run_pure_score"; readonly threshold: number }
   | { readonly kind: "lifetime_pieces"; readonly threshold: number }
-  | { readonly kind: "own_all_themes" }
+  | { readonly kind: "lifetime_score"; readonly threshold: number }
+  | { readonly kind: "lifetime_runs"; readonly threshold: number }
+  | { readonly kind: "run_pieces"; readonly threshold: number }
+  | { readonly kind: "run_no_revive_score"; readonly threshold: number }
+  | { readonly kind: "run_powerups_used"; readonly threshold: number }
+  // `threshold` rather than "all of them" so the bar doesn't silently move
+  // every time a theme is added (§19 round 9).
+  | { readonly kind: "own_themes"; readonly threshold: number }
   | { readonly kind: "login_streak"; readonly days: number }
   | { readonly kind: "daily_score_streak"; readonly threshold: number; readonly days: number }
   | { readonly kind: "weekly_total_score"; readonly threshold: number; readonly days: number }
@@ -41,6 +48,14 @@ export interface AchievementDef {
   readonly repeatable: boolean;
   readonly condition: AchievementCondition;
   readonly reward: AchievementReward;
+  /**
+   * Secret achievements (§19 round 9) are listed but not described until
+   * earned — the UI shows a locked placeholder instead of the name and
+   * requirement. They still evaluate exactly like any other; "secret" is
+   * purely a presentation flag, so nothing about the server logic branches
+   * on it.
+   */
+  readonly secret?: boolean;
 }
 
 export const ACHIEVEMENTS: readonly AchievementDef[] = [
@@ -94,9 +109,13 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
     reward: { kind: "inventory", items: { rocket: 2 } },
   },
   {
-    id: "combo_x6",
+    // Round 9 raised the bar from x6 to x8, hence the renamed id: a player
+    // who already holds `combo_x6` keeps that (now inert) row and re-earns
+    // this one — which the retroactive lifetime check does automatically the
+    // next time they open the app if their best combo already reaches 8.
+    id: "combo_x8",
     repeatable: false,
-    condition: { kind: "run_combo", threshold: 6 },
+    condition: { kind: "run_combo", threshold: 8 },
     reward: { kind: "inventory", items: { fill: 1 } },
   },
   {
@@ -124,9 +143,12 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
     reward: { kind: "inventory", items: { eraser: 5 } },
   },
   {
+    // Counts *owned* themes, however they were obtained — a theme granted by
+    // `first_5000`'s reward lands in the same inventory balance a purchase
+    // does, so it counts here too (§19 round 9).
     id: "collector",
     repeatable: false,
-    condition: { kind: "own_all_themes" },
+    condition: { kind: "own_themes", threshold: 5 },
     reward: { kind: "inventory", items: { bomb: 5 } },
   },
   {
@@ -134,6 +156,83 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
     repeatable: true,
     condition: { kind: "weekly_perfect_clears", threshold: 5, days: 7 },
     reward: { kind: "inventory", items: { rocket: 3 } },
+  },
+
+  // --- Secret achievements (§19 round 9) ---------------------------------
+  // Deliberately steep, and undescribed until earned, so they read as
+  // discoveries rather than a checklist. Each one asks for something a
+  // player would only hit by pushing well past ordinary play.
+  {
+    id: "secret_marathon",
+    repeatable: false,
+    secret: true,
+    condition: { kind: "run_pieces", threshold: 500 },
+    reward: { kind: "inventory", items: { rocket: 5, bomb: 5 } },
+  },
+  {
+    id: "secret_purist",
+    repeatable: false,
+    secret: true,
+    // 15k without touching a single power-up.
+    condition: { kind: "run_pure_score", threshold: 15000 },
+    reward: { kind: "inventory", items: { fill: 3 } },
+  },
+  {
+    id: "secret_untouchable",
+    repeatable: false,
+    secret: true,
+    condition: { kind: "run_combo", threshold: 20 },
+    reward: { kind: "inventory", items: { fill: 2, bomb: 3 } },
+  },
+  {
+    id: "secret_immaculate",
+    repeatable: false,
+    secret: true,
+    condition: { kind: "run_perfect_clears", threshold: 5 },
+    reward: { kind: "inventory", items: { fill: 3 } },
+  },
+  {
+    id: "secret_demolition",
+    repeatable: false,
+    secret: true,
+    condition: { kind: "run_units_cleared", threshold: 150 },
+    reward: { kind: "inventory", items: { bomb: 5 } },
+  },
+  {
+    id: "secret_high_roller",
+    repeatable: false,
+    secret: true,
+    condition: { kind: "run_score", threshold: 50000 },
+    reward: { kind: "inventory", items: { pencil: 10, eraser: 10 } },
+  },
+  {
+    id: "secret_no_safety_net",
+    repeatable: false,
+    secret: true,
+    // A big score with no revive bought or spent along the way.
+    condition: { kind: "run_no_revive_score", threshold: 25000 },
+    reward: { kind: "inventory", items: { revive: 3 } },
+  },
+  {
+    id: "secret_toolmaster",
+    repeatable: false,
+    secret: true,
+    condition: { kind: "run_powerups_used", threshold: 25 },
+    reward: { kind: "inventory", items: { pencil: 10 } },
+  },
+  {
+    id: "secret_centurion",
+    repeatable: false,
+    secret: true,
+    condition: { kind: "lifetime_runs", threshold: 100 },
+    reward: { kind: "inventory", items: { pencil: 10, eraser: 10, rocket: 5, bomb: 5, fill: 3 } },
+  },
+  {
+    id: "secret_millionaire",
+    repeatable: false,
+    secret: true,
+    condition: { kind: "lifetime_score", threshold: 1_000_000 },
+    reward: { kind: "inventory", items: { revive: 10 } },
   },
 ] as const;
 

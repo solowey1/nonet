@@ -45,6 +45,8 @@ export interface GameState {
   readonly rng: RngState;
   readonly score: number;
   readonly comboLevel: number;
+  /** Consecutive clearing placements — the grace below only applies once this reaches 2 (§6 round 9). */
+  readonly comboChain: number;
   /** True the placement after a non-clearing one — one grace placement before the combo actually zeroes (§6 round 5). */
   readonly comboGraceActive: boolean;
   readonly piecesPlaced: number;
@@ -99,6 +101,7 @@ export function createInitialState(seed: Uint8Array): GameState {
     rng,
     score: 0,
     comboLevel: 0,
+    comboChain: 0,
     comboGraceActive: false,
     piecesPlaced: 0,
     unitsCleared: 0,
@@ -141,6 +144,7 @@ function reduceRevive(state: GameState): GameState {
     ...state,
     board: EMPTY_BOARD,
     comboLevel: 0,
+    comboChain: 0,
     comboGraceActive: false,
     status: "playing",
   };
@@ -161,7 +165,10 @@ function reducePlace(state: GameState, action: PlaceAction): GameState {
 
   const placedBoard = placePiece(state.board, piece, action.r, action.c);
   const { board: clearedBoard, unitsCleared } = resolveClears(placedBoard);
-  const combo = nextCombo({ comboLevel: state.comboLevel, comboGraceActive: state.comboGraceActive }, unitsCleared);
+  const combo = nextCombo(
+    { comboLevel: state.comboLevel, comboChain: state.comboChain, comboGraceActive: state.comboGraceActive },
+    unitsCleared,
+  );
   const comboLevelAfter = combo.comboLevel;
   const isEmpty = isBoardEmpty(clearedBoard);
   const scoreResult = scorePlacement({
@@ -193,6 +200,7 @@ function reducePlace(state: GameState, action: PlaceAction): GameState {
     rng,
     score: nextScore,
     comboLevel: comboLevelAfter,
+    comboChain: combo.comboChain,
     comboGraceActive: combo.comboGraceActive,
     piecesPlaced: state.piecesPlaced + 1,
     unitsCleared: state.unitsCleared + unitsCleared,
@@ -256,6 +264,7 @@ function reducePowerup(state: GameState, action: PowerupAction): GameState {
     rng: state.rng,
     score: state.score + scoreResult.turnScore,
     comboLevel: state.comboLevel,
+    comboChain: state.comboChain,
     comboGraceActive: state.comboGraceActive,
     piecesPlaced: state.piecesPlaced,
     unitsCleared: state.unitsCleared + unitsCleared,
