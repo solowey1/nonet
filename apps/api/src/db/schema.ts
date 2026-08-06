@@ -68,6 +68,9 @@ export const runs = pgTable(
     piecesPlaced: integer("pieces_placed").notNull().default(0),
     perfectClears: integer("perfect_clears").notNull().default(0),
     usedPowerups: boolean("used_powerups").notNull().default(false),
+    // The count, not just the boolean above: `secret_toolmaster` asks for 25
+    // power-ups in a single run, and the boolean can't answer that (§19 round 9).
+    powerupsUsed: integer("powerups_used").notNull().default(0),
     revived: boolean("revived").notNull().default(false),
     verified: boolean("verified").notNull().default(false),
     actions: jsonb("actions").notNull().default(sql`'[]'::jsonb`),

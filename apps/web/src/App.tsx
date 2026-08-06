@@ -11,6 +11,7 @@ import { GameOverOverlay } from "./components/GameOverOverlay.js";
 import { HandTray } from "./components/HandTray.js";
 import { InventoryBar } from "./components/InventoryBar.js";
 import { AchievementsScreen } from "./components/AchievementsScreen.js";
+import { AchievementToasts } from "./components/AchievementToasts.js";
 import { LeaderboardScreen } from "./components/LeaderboardScreen.js";
 import { MainMenu } from "./components/MainMenu.js";
 import { RocketGutters } from "./components/RocketGutters.js";
@@ -22,7 +23,7 @@ import { useCellSize } from "./hooks/useCellSize.js";
 import { useDragPlacement } from "./hooks/useDragPlacement.js";
 import { usePowerupTargeting, type TargetingState } from "./hooks/usePowerupTargeting.js";
 import { installAudioUnlock } from "./audio/sounds.js";
-import { useGameStore } from "./store/gameStore.js";
+import { useGameStore, type Screen } from "./store/gameStore.js";
 import { hideBackButton, initSettingsButton, showBackButton } from "./telegram/webapp.js";
 import styles from "./App.module.css";
 
@@ -79,6 +80,19 @@ export function App() {
     );
   }
 
+  // The toast stack lives outside the screen switch on purpose: a run is
+  // finished (and its achievements returned) either from the game-over screen
+  // or from `goToMenu`, so the announcement has to survive that navigation
+  // rather than unmount with whichever screen happened to trigger it.
+  return (
+    <>
+      <CurrentScreen boardRef={boardRef} screen={screen} />
+      <AchievementToasts />
+    </>
+  );
+}
+
+function CurrentScreen({ screen, boardRef }: { screen: Screen; boardRef: React.RefObject<HTMLDivElement | null> }) {
   switch (screen) {
     case "menu":
       return <MainMenu />;

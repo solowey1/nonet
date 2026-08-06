@@ -29,6 +29,13 @@
       "when": 1785787699263,
       "tag": "0003_gigantic_meteorite",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786034608171,
+      "tag": "0004_conscious_zarda",
+      "breakpoints": true
     }
   ]
 }

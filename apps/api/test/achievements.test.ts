@@ -147,6 +147,77 @@ describe("achievements: first_5000 (mandatory, theme-unlock-or-fallback)", () =>
   });
 });
 
+// §19 round 9: "Collector" moved from "own every theme" to "own 5 themes", and
+// the user explicitly asked to confirm it still counts a theme that arrived as
+// an achievement *reward* rather than a purchase. It does, because both paths
+// write the same `inventory_balance` row — these tests pin that down.
+describe("achievements: collector (owns 5 themes, however obtained)", () => {
+  it("counts a theme granted by another achievement, not just purchased ones", async () => {
+    const { token, userId } = await sessionFor(106);
+    // Four bought outright, deliberately *not* Monochrome...
+    for (const id of ["sunset", "ocean", "neon", "retrowave"]) {
+      await db.insert(inventoryBalance).values({ userId, item: `theme_${id}`, qty: 1 });
+    }
+    // ...and the fifth arrives only as first_5000's reward.
+    await insertVerifiedRun(userId, 5000);
+
+    const unlocked = await evaluateLifetimeAchievements(db, userId);
+    expect(unlocked.map((u) => u.id)).toEqual(expect.arrayContaining(["first_5000", "collector"]));
+
+    const rows = await db.select().from(inventoryBalance);
+    expect(rows.find((r) => r.userId === userId && r.item === "theme_monochrome")?.qty).toBeGreaterThanOrEqual(1);
+
+    const entry = (await app.inject({ method: "GET", url: "/api/achievements", headers: { authorization: `Bearer ${token}` } }))
+      .json()
+      .achievements.find((a: { id: string }) => a.id === "collector");
+    expect(entry).toMatchObject({ unlocked: true, progress: { current: 5, target: 5 } });
+  });
+
+  it("stays locked at four themes", async () => {
+    const { token, userId } = await sessionFor(107);
+    for (const id of ["sunset", "ocean", "neon", "monochrome"]) {
+      await db.insert(inventoryBalance).values({ userId, item: `theme_${id}`, qty: 1 });
+    }
+    const unlocked = await evaluateLifetimeAchievements(db, userId);
+    expect(unlocked.map((u) => u.id)).not.toContain("collector");
+
+    const entry = (await app.inject({ method: "GET", url: "/api/achievements", headers: { authorization: `Bearer ${token}` } }))
+      .json()
+      .achievements.find((a: { id: string }) => a.id === "collector");
+    expect(entry).toMatchObject({ unlocked: false, progress: { current: 4, target: 5 } });
+  });
+});
+
+describe("achievements: secret catalogue (§19 round 9)", () => {
+  it("marks the ten secret achievements as secret and everything else as not", async () => {
+    const { token } = await sessionFor(108);
+    const { achievements } = (await app.inject({ method: "GET", url: "/api/achievements", headers: { authorization: `Bearer ${token}` } })).json();
+    const secrets = achievements.filter((a: { secret: boolean }) => a.secret);
+    expect(secrets).toHaveLength(10);
+    expect(achievements.find((a: { id: string }) => a.id === "first_5000").secret).toBe(false);
+  });
+
+  it("unlocks secret_millionaire off the lifetime score sum, not a single run", async () => {
+    const { userId } = await sessionFor(109);
+    for (let i = 0; i < 5; i++) await insertVerifiedRun(userId, 200_000);
+
+    const unlocked = await evaluateLifetimeAchievements(db, userId);
+    expect(unlocked.map((u) => u.id)).toContain("secret_millionaire");
+    // Best *single* run is 200k, so the 50k single-run secret rides along, but
+    // the millionaire one could only have come from the sum.
+    expect(unlocked.map((u) => u.id)).toContain("secret_high_roller");
+  });
+
+  it("unlocks secret_no_safety_net only from a run that never revived", async () => {
+    const { userId } = await sessionFor(110);
+    await db.insert(runs).values({ userId, seed: "00", score: 30_000, revived: true, verified: true, endedAt: new Date() });
+    expect((await evaluateLifetimeAchievements(db, userId)).map((u) => u.id)).not.toContain("secret_no_safety_net");
+
+    await db.insert(runs).values({ userId, seed: "00", score: 30_000, revived: false, verified: true, endedAt: new Date() });
+    expect((await evaluateLifetimeAchievements(db, userId)).map((u) => u.id)).toContain("secret_no_safety_net");
+  });
+});
+
 describe("achievements: weekly_50000 (repeatable, rolling 7-day window)", () => {
   it("unlocks once the trailing 7 days' cumulative score crosses 50000", async () => {
     const { token, userId } = await sessionFor(104);

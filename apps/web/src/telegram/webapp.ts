@@ -6,7 +6,12 @@
  * optional for a game whose core interaction *is* dragging — without it,
  * dragging a piece downward closes the app.
  */
-import { PREMIUM_THEMES, type ThemePalette } from "@nonet/shared";
+import {
+  PREMIUM_THEMES,
+  type PremiumThemeDef,
+  type ThemePalette,
+  type ThemeSoundProfile,
+} from "@nonet/shared";
 import i18next, { isSupportedLanguage, resolveLanguage, type LanguageMode } from "../i18n/index.js";
 export type { LanguageMode };
 
@@ -404,21 +409,45 @@ function clearPaletteOverride(): void {
   for (const prop of PALETTE_PROPERTIES) root.removeProperty(prop);
 }
 
+/**
+ * A theme can carry more than colours (§19 round 9): `soundProfile` re-voices
+ * the synth in audio/sounds.ts, and `effects` switches on extra visual
+ * treatment via a `data-theme-effects` attribute the stylesheets key off.
+ * Both are stored here, alongside the other applied-theme state, so there's
+ * exactly one place that knows which theme is currently live.
+ */
+let activeSoundProfile: ThemeSoundProfile = "default";
+
+export function getThemeSoundProfile(): ThemeSoundProfile {
+  return activeSoundProfile;
+}
+
+function applyThemeTraits(theme: PremiumThemeDef | null): void {
+  activeSoundProfile = theme?.soundProfile ?? "default";
+  const effects = theme?.effects ?? "none";
+  if (effects === "none") delete document.documentElement.dataset.themeEffects;
+  else document.documentElement.dataset.themeEffects = effects;
+}
+
 function applyResolvedTheme(): void {
   if (themeMode === "auto") {
     clearPaletteOverride();
+    applyThemeTraits(null);
     applyThemeParams(); // hand control back to Telegram's live theme immediately, not just on the next themeChanged
     return;
   }
+  const premium = PREMIUM_THEMES.find((theme) => theme.id === themeMode) ?? null;
   const palette = paletteFor(themeMode);
   // An unknown/not-(yet-)owned id (e.g. stale CloudStorage data from before
   // a theme purchase was later refunded, or plain corruption) falls back to
   // auto rather than leaving stale colors on screen from a previous mode.
   if (!palette) {
     clearPaletteOverride();
+    applyThemeTraits(null);
     applyThemeParams();
     return;
   }
+  applyThemeTraits(premium);
   applyPalette(palette);
 }
 

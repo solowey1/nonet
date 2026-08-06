@@ -97,6 +97,7 @@ export async function runRoutes(app: FastifyInstance) {
           piecesPlaced: result.finalState.piecesPlaced,
           perfectClears: result.finalState.perfectClears,
           usedPowerups,
+          powerupsUsed: result.finalState.powerupsUsed,
           revived,
           verified: true,
           actions,

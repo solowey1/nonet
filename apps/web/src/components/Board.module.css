@@ -77,6 +77,28 @@
 }
 
 /*
+ * Retrowave's `effects: "neonGlow"` (§19 round 9) — the one theme that changes
+ * more than colours. `data-theme-effects` is set on <html> by webapp.ts when
+ * the theme is applied, so this costs nothing for every other theme, and the
+ * glow reads from the palette rather than hardcoding synthwave pink.
+ */
+:global(html[data-theme-effects="neonGlow"]) .board {
+  box-shadow:
+    var(--nonet-shadow),
+    0 0 24px color-mix(in srgb, var(--nonet-accent) 35%, transparent);
+}
+
+:global(html[data-theme-effects="neonGlow"]) .cellInner[data-filled="true"] {
+  box-shadow: 0 0 10px color-mix(in srgb, var(--piece-color, var(--nonet-cell-filled)) 75%, transparent);
+}
+
+:global(html[data-theme-effects="neonGlow"]) .cell[data-border-right="true"],
+:global(html[data-theme-effects="neonGlow"]) .cell[data-border-bottom="true"] {
+  /* The 3x3 dividers become glowing grid lines rather than flat rules. */
+  filter: drop-shadow(0 0 3px var(--nonet-block-divider));
+}
+
+/*
  * Landscape: 9 x 9.5vh plus padding is nearly the whole viewport height, so
  * the board ran right into the bottom edge. A slightly smaller cell buys back
  * the breathing room without changing the portrait sizing at all (§19 round 8).

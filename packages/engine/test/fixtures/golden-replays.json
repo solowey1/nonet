@@ -145,7 +145,7 @@
       }
     ],
     "expectedScore": 108,
-    "expectedHash": "21f5e07f",
+    "expectedHash": "66776585",
     "expectedStatus": "gameover"
   },
   {
@@ -391,8 +391,8 @@
         "c": 5
       }
     ],
-    "expectedScore": 320,
-    "expectedHash": "90c86f09",
+    "expectedScore": 293,
+    "expectedHash": "0d43ef5f",
     "expectedStatus": "gameover"
   },
   {
@@ -624,8 +624,8 @@
         "c": 4
       }
     ],
-    "expectedScore": 233,
-    "expectedHash": "ce9f0762",
+    "expectedScore": 215,
+    "expectedHash": "f1a87c52",
     "expectedStatus": "gameover"
   },
   {
@@ -794,8 +794,8 @@
         "c": 7
       }
     ],
-    "expectedScore": 214,
-    "expectedHash": "dc9f400e",
+    "expectedScore": 205,
+    "expectedHash": "071accf6",
     "expectedStatus": "gameover"
   },
   {
@@ -1573,8 +1573,8 @@
         "c": 7
       }
     ],
-    "expectedScore": 1580,
-    "expectedHash": "b5a00590",
+    "expectedScore": 1481,
+    "expectedHash": "05ba0843",
     "expectedStatus": "gameover"
   },
   {
@@ -1778,8 +1778,8 @@
         "c": 1
       }
     ],
-    "expectedScore": 228,
-    "expectedHash": "02ea2823",
+    "expectedScore": 219,
+    "expectedHash": "5041829a",
     "expectedStatus": "gameover"
   },
   {
@@ -2053,8 +2053,8 @@
         "c": 6
       }
     ],
-    "expectedScore": 405,
-    "expectedHash": "09f7404c",
+    "expectedScore": 378,
+    "expectedHash": "4a986f2d",
     "expectedStatus": "gameover"
   },
   {
@@ -2454,8 +2454,8 @@
         "c": 1
       }
     ],
-    "expectedScore": 555,
-    "expectedHash": "c6d89a70",
+    "expectedScore": 546,
+    "expectedHash": "cd46e4ac",
     "expectedStatus": "gameover"
   },
   {
@@ -2856,7 +2856,7 @@
       }
     ],
     "expectedScore": 496,
-    "expectedHash": "d6ac2fda",
+    "expectedHash": "23338e24",
     "expectedStatus": "gameover"
   },
   {
@@ -3131,7 +3131,7 @@
       }
     ],
     "expectedScore": 276,
-    "expectedHash": "ff8ee910",
+    "expectedHash": "1e4b97df",
     "expectedStatus": "gameover"
   },
   {
@@ -3343,7 +3343,7 @@
       }
     ],
     "expectedScore": 351,
-    "expectedHash": "52c9436a",
+    "expectedHash": "2493cf0b",
     "expectedStatus": "gameover"
   },
   {
@@ -3597,7 +3597,7 @@
       }
     ],
     "expectedScore": 339,
-    "expectedHash": "52085056",
+    "expectedHash": "04995ad0",
     "expectedStatus": "gameover"
   },
   {
@@ -3976,8 +3976,8 @@
         "c": 7
       }
     ],
-    "expectedScore": 514,
-    "expectedHash": "3a908baa",
+    "expectedScore": 505,
+    "expectedHash": "52ff63b5",
     "expectedStatus": "gameover"
   },
   {
@@ -4168,7 +4168,7 @@
       }
     ],
     "expectedScore": 162,
-    "expectedHash": "3b6c5659",
+    "expectedHash": "4e0aa302",
     "expectedStatus": "gameover"
   },
   {
@@ -4400,8 +4400,8 @@
         "c": 7
       }
     ],
-    "expectedScore": 333,
-    "expectedHash": "5c2ddd66",
+    "expectedScore": 306,
+    "expectedHash": "a127c460",
     "expectedStatus": "gameover"
   },
   {
@@ -4906,8 +4906,8 @@
         "c": 0
       }
     ],
-    "expectedScore": 1095,
-    "expectedHash": "dce90a5a",
+    "expectedScore": 1023,
+    "expectedHash": "857c1c8a",
     "expectedStatus": "gameover"
   },
   {
@@ -5076,8 +5076,8 @@
         "c": 0
       }
     ],
-    "expectedScore": 168,
-    "expectedHash": "9a50b0c2",
+    "expectedScore": 159,
+    "expectedHash": "2cf6a3f1",
     "expectedStatus": "gameover"
   },
   {
@@ -5449,8 +5449,8 @@
         "c": 0
       }
     ],
-    "expectedScore": 635,
-    "expectedHash": "cfe39c41",
+    "expectedScore": 617,
+    "expectedHash": "d76327b8",
     "expectedStatus": "gameover"
   },
   {
@@ -5830,7 +5830,7 @@
       }
     ],
     "expectedScore": 555,
-    "expectedHash": "5a4b30bf",
+    "expectedHash": "ccf8cdf9",
     "expectedStatus": "gameover"
   },
   {
@@ -6272,8 +6272,8 @@
         "c": 0
       }
     ],
-    "expectedScore": 697,
-    "expectedHash": "d1573ffb",
+    "expectedScore": 661,
+    "expectedHash": "67200382",
     "expectedStatus": "gameover"
   }
 ]

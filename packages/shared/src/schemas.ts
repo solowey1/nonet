@@ -320,6 +320,10 @@ export const walletLinkResponseSchema = z.object({
 export const achievementProgressSchema = z.object({
   id: z.string(),
   repeatable: z.boolean(),
+  // Presentation only: the UI hides a secret achievement's name, requirement
+  // and progress until it's earned (§19 round 9). Defaulted so a client talking
+  // to an older API still parses.
+  secret: z.boolean().default(false),
   unlocked: z.boolean(),
   timesCompleted: z.number().int().nonnegative(),
   lastCompletedAt: z.string().nullable(),

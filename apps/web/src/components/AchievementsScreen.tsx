@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Award, Lock } from "lucide-react";
+import { ArrowLeft, Award, HelpCircle, Lock } from "lucide-react";
 import { ACHIEVEMENTS, type AchievementProgress, type AchievementReward } from "@nonet/shared";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -65,6 +65,10 @@ export function AchievementsScreen({ achievements, onClose }: AchievementsScreen
             progress.progress.target > 0
               ? Math.min(100, (progress.progress.current / progress.progress.target) * 100)
               : 0;
+          // A secret stays fully undisclosed until earned (§19 round 9) — no
+          // name, no requirement, no bar. The bar in particular would give the
+          // whole thing away, since `target` *is* the requirement as a number.
+          const hidden = progress.secret && !progress.unlocked;
           return (
             <div key={progress.id} className={cn("rounded-lg bg-muted p-3", !progress.unlocked && "opacity-70")}>
               <div className="flex items-start gap-2.5">
@@ -76,30 +80,40 @@ export function AchievementsScreen({ achievements, onClose }: AchievementsScreen
                 >
                   {progress.unlocked ? (
                     <Award className="h-4 w-4" aria-hidden="true" />
+                  ) : hidden ? (
+                    <HelpCircle className="h-4 w-4" aria-hidden="true" />
                   ) : (
                     <Lock className="h-4 w-4" aria-hidden="true" />
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold">{t(`achievements.names.${progress.id}`)}</span>
+                    <span className="font-semibold">
+                      {hidden ? t("achievements.secretName") : t(`achievements.names.${progress.id}`)}
+                    </span>
                     {progress.repeatable && progress.timesCompleted > 0 && (
                       <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[0.65rem] font-bold text-primary">
                         x{progress.timesCompleted}
                       </span>
                     )}
                   </div>
-                  <div className="text-sm text-muted-foreground">{t(`achievements.descriptions.${progress.id}`)}</div>
-                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-background">
-                    <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+                  <div className="text-sm text-muted-foreground">
+                    {hidden ? t("achievements.secretDescription") : t(`achievements.descriptions.${progress.id}`)}
                   </div>
-                  <div className="mt-0.5 text-xs tabular-nums text-muted-foreground">
-                    {Math.min(progress.progress.current, progress.progress.target).toLocaleString()} /{" "}
-                    {progress.progress.target.toLocaleString()}
-                  </div>
-                  <div className="mt-1.5">
-                    <RewardLine reward={def.reward} />
-                  </div>
+                  {!hidden && (
+                    <>
+                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-background">
+                        <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+                      </div>
+                      <div className="mt-0.5 text-xs tabular-nums text-muted-foreground">
+                        {Math.min(progress.progress.current, progress.progress.target).toLocaleString()} /{" "}
+                        {progress.progress.target.toLocaleString()}
+                      </div>
+                      <div className="mt-1.5">
+                        <RewardLine reward={def.reward} />
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

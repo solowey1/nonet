@@ -39,41 +39,56 @@ describe("comboMultiplierX10", () => {
 });
 
 describe("nextCombo", () => {
-  it("increments by the number of units cleared, not a flat +1", () => {
-    expect(nextCombo({ comboLevel: 0, comboGraceActive: false }, 1)).toEqual({
+  it("increments by the number of units cleared, not a flat +1, and extends the chain by one", () => {
+    expect(nextCombo({ comboLevel: 0, comboChain: 0, comboGraceActive: false }, 1)).toEqual({
       comboLevel: 1,
+      comboChain: 1,
       comboGraceActive: false,
     });
-    expect(nextCombo({ comboLevel: 3, comboGraceActive: false }, 2)).toEqual({
+    expect(nextCombo({ comboLevel: 3, comboChain: 2, comboGraceActive: false }, 2)).toEqual({
       comboLevel: 5,
+      comboChain: 3,
       comboGraceActive: false,
     });
   });
 
   it("clearing also cancels an active grace warning", () => {
-    expect(nextCombo({ comboLevel: 4, comboGraceActive: true }, 1)).toEqual({
+    expect(nextCombo({ comboLevel: 4, comboChain: 2, comboGraceActive: true }, 1)).toEqual({
       comboLevel: 5,
+      comboChain: 3,
       comboGraceActive: false,
     });
   });
 
-  it("a non-clearing placement enters grace instead of zeroing immediately", () => {
-    expect(nextCombo({ comboLevel: 5, comboGraceActive: false }, 0)).toEqual({
+  // Round 9: the grace is a reward for an established streak, not for one clear.
+  it("a single clear does NOT earn a grace — the next miss zeroes it outright", () => {
+    expect(nextCombo({ comboLevel: 2, comboChain: 1, comboGraceActive: false }, 0)).toEqual({
+      comboLevel: 0,
+      comboChain: 0,
+      comboGraceActive: false,
+    });
+  });
+
+  it("once two clears land back to back, a miss only enters grace", () => {
+    expect(nextCombo({ comboLevel: 5, comboChain: 2, comboGraceActive: false }, 0)).toEqual({
       comboLevel: 5,
+      comboChain: 2,
       comboGraceActive: true,
     });
   });
 
   it("a second consecutive non-clearing placement zeroes the combo", () => {
-    expect(nextCombo({ comboLevel: 5, comboGraceActive: true }, 0)).toEqual({
+    expect(nextCombo({ comboLevel: 5, comboChain: 3, comboGraceActive: true }, 0)).toEqual({
       comboLevel: 0,
+      comboChain: 0,
       comboGraceActive: false,
     });
   });
 
   it("stays at 0 with no grace when there was nothing to lose", () => {
-    expect(nextCombo({ comboLevel: 0, comboGraceActive: false }, 0)).toEqual({
+    expect(nextCombo({ comboLevel: 0, comboChain: 0, comboGraceActive: false }, 0)).toEqual({
       comboLevel: 0,
+      comboChain: 0,
       comboGraceActive: false,
     });
   });

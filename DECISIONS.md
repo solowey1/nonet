@@ -2056,3 +2056,126 @@ A measurement note: the first run reported the landscape pieces as still too
 low. That was the *check* being wrong — in landscape `.tray` is
 `height: 100%` of the rail, so its bounding box describes the rail, not the
 pieces. Measuring the piece hit-areas instead gave the real answer.
+
+## Round 9: the dead "New game" button, combo chains, Retrowave, secret achievements, and toasts
+
+### "New game" did nothing after a long run — an expired *session* token, not a UI bug
+
+`SESSION_TOKEN_TTL_SECONDS` defaults to an hour; `RUN_TOKEN_TTL_SECONDS` to
+six. A run that lasts longer than an hour therefore outlives the session
+token that started it while its own run token is still perfectly good — so
+the game plays on happily, and then `/api/run/start` (which needs the
+*session* token) 401s. `newRun()` had no `try/catch`, so the rejection went
+nowhere and the button was simply inert, from the menu and from "Play again"
+alike.
+
+The fix is a `withSession(fn)` wrapper in the store: run `fn` with the
+current token, and on an explicit 401 — nothing else — re-mint the session
+from `initData` once and retry. `loadProfile`, `loadAchievements` and the
+revive purchase go through it too, since all three had the same latent
+failure. A new `actionError` field surfaces the remaining failure case as
+text under the menu rather than leaving a dead button: the whole point of
+this round's bug was silence.
+
+A note on how this was verified, because the first attempt lied. Driving the
+store directly from Playwright (`await import("/src/store/gameStore.ts")`)
+reported the bug still reproducing *after* the fix. The cause was Vite HMR:
+having just edited that module, the running page held a `?t=`-versioned copy
+while the test's import got a fresh instance — two different stores. The
+honest repro intercepts the network instead (`page.route("**/api/run/start")`
+forcing a single 401), and shows two calls to `/api/run/start` and a visible
+board. Same trap as round 7; the same fix applies — test through the network
+or after a dev-server restart, never through a module you just edited.
+
+### Combo grace only arms once a chain actually exists
+
+Round 5 gave every combo one forgiving non-clearing placement before it
+reset. Applied from the first clear, that made a single lucky line feel like
+a combo. `ComboState` now also carries `comboChain` — consecutive *clearing*
+placements, distinct from `comboLevel`, which counts cleared units and can
+jump by 2+ in one move. The grace arms only at `comboChain >= 2`: clear
+twice in a row and the streak is worth protecting; clear once and a miss
+zeroes it outright. Golden replays were regenerated, which is the deliberate
+reviewed break the generator's own comment calls for.
+
+### Retrowave: the one theme that is not a repaint
+
+Every premium theme so far was a palette. Retrowave (120 stars, twice the
+others, and last in the shop's theme row so it still reads cheapest-first)
+adds two things, both declared as closed enums on `PremiumThemeDef` rather
+than free-form config, so a theme can never smuggle in arbitrary behaviour:
+
+- `effects: "neonGlow"` — `webapp.ts` stamps `data-theme-effects` on `<html>`,
+  and `Board.module.css` reads it to add a board halo, a per-cell glow and
+  drop-shadowed 3x3 dividers. Every rule derives its colour from the palette,
+  so nothing hardcodes synthwave pink, and no other theme pays for it.
+- `soundProfile: "retro"` — `sounds.ts` resolves a `Voice` (waveforms, scale,
+  detune) per profile instead of hardcoding one. Retro is square/sawtooth,
+  −8 cents, minor pentatonic; the default stays triangle/sine, in tune, major
+  pentatonic. Instrumenting `createOscillator` in the browser confirms the
+  A/B: the same clear plays 466/523/587/698/784 Hz on triangles by default
+  and 466/554/622/698/831 Hz on detuned squares under Retrowave.
+
+### Collector counts themes owned, not themes bought
+
+"Own every theme" moved the goalposts every time a theme shipped, so the
+condition became `own_themes` with a threshold of 5. It reads
+`inventory_balance`, which is where a purchase *and* an achievement reward
+both land — so the Monochrome that `first_5000` hands out for free counts
+exactly like a bought one. Two API tests pin that down explicitly: five
+themes with only four purchased still unlocks Collector; four themes doesn't.
+
+`combo_x6` became `combo_x8` (a new id, so anyone holding the old row keeps
+it as an inert artefact and re-earns the new one automatically via the
+retroactive lifetime check).
+
+### Ten secret achievements, and one new column
+
+Secrets are listed but undescribed until earned: `secret: true` on the
+definition, surfaced through the API snapshot, and the UI renders a
+placeholder with no name, no requirement and — importantly — no progress bar,
+since `target` *is* the requirement written as a number.
+
+Nothing about the server logic branches on `secret`; it is purely
+presentational. Nine of the ten ride on aggregates that already existed
+(best pieces in a run, best score with no revive, lifetime score sum, run
+count). The tenth, "use 25 power-ups in one run", needed real data: `runs`
+only stored a `used_powerups` boolean, which cannot answer a threshold
+question, so migration 0004 adds `powerups_used integer` alongside it, filled
+from the replayed final state.
+
+### Achievement toasts: fixed cost on screen, however good the run was
+
+Unlocked achievements were listed inline on the game-over card, one line
+each — a strong run pushed the buttons off the bottom of the screen. They now
+announce themselves in a bottom-anchored toast (hand-authored in
+`components/ui/toast.tsx`, matching the rest of the hand-authored shadcn
+primitives rather than pulling in a toaster dependency that wouldn't know
+about this app's safe-area variables).
+
+More than one collapses into a *stack*: one card carrying the count, two
+decorative layers peeking out behind it, and the whole pile is a single tap
+target that expands into the full list (capped at `40vh` and scrollable).
+So six unlocks cost exactly as much screen as one. The viewport is
+`pointer-events-none` with `pointer-events-auto` only on the cards, so the
+strip around them stays tappable. Collapsed toasts fade after 7s; an expanded
+list waits for a tap, since reading it is a deliberate act.
+
+The toaster is mounted outside App's screen switch, because a run is finished
+— and its achievements returned — either from the game-over screen or from
+`goToMenu`, and the announcement has to survive that navigation.
+
+### Verified
+
+120 engine tests (including the two new combo-chain cases), 76 API tests
+(including Collector-via-reward, the secret catalogue, and the no-revive
+aggregate), `tsc --noEmit` across every package, and headless Chromium
+checks: the stack renders bottom-anchored with two peek layers and the text
+"Achievements unlocked: 6", expands to exactly six named rows, degrades to a
+plain tap-to-dismiss toast for a single unlock, the game-over card no longer
+lists achievements at all, "Play again" starts a new run with the toast
+arriving over it, secret achievements render as "Secret achievement / Keep
+playing to discover this one" with no bar, and Retrowave applies
+`data-theme-effects="neonGlow"`, a cyan board halo, drop-shadowed dividers,
+per-cell glow, and the retro sound voice — all of which revert on switching
+back to a plain theme.
